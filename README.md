@@ -1,0 +1,2 @@
+# grc
+golang remote configuration
