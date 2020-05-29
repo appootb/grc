@@ -229,20 +229,20 @@ func (t *Float) Changed(evt UpdateEvent) {
 	}
 }
 
-type EmbedSlice struct {
+type EmbedArray struct {
 	v atomic.Value
 	r bool
 }
 
-func newEmbedSlice(sv []string, recursion bool) *EmbedSlice {
-	es := &EmbedSlice{
+func newEmbedArray(sv []string, recursion bool) *EmbedArray {
+	es := &EmbedArray{
 		r: recursion,
 	}
 	es.v.Store(sv)
 	return es
 }
 
-func (t *EmbedSlice) load() []string {
+func (t *EmbedArray) load() []string {
 	sv := t.v.Load()
 	if sv == nil {
 		return []string{}
@@ -250,22 +250,22 @@ func (t *EmbedSlice) load() []string {
 	return sv.([]string)
 }
 
-func (t *EmbedSlice) Len() int {
+func (t *EmbedArray) Len() int {
 	return len(t.load())
 }
 
-func (t *EmbedSlice) CanSlice() bool {
+func (t *EmbedArray) HasSubArray() bool {
 	return t.r
 }
 
-func (t *EmbedSlice) String() string {
+func (t *EmbedArray) String() string {
 	if t.r {
 		return strings.Join(t.load(), ";")
 	}
 	return strings.Join(t.load(), ",")
 }
 
-func (t *EmbedSlice) Strings() []*EmbedString {
+func (t *EmbedArray) Strings() []*EmbedString {
 	sv := t.load()
 	es := make([]*EmbedString, 0, len(sv))
 	for _, v := range sv {
@@ -274,7 +274,7 @@ func (t *EmbedSlice) Strings() []*EmbedString {
 	return es
 }
 
-func (t *EmbedSlice) Bools() []*EmbedBool {
+func (t *EmbedArray) Bools() []*EmbedBool {
 	sv := t.load()
 	eb := make([]*EmbedBool, 0, len(sv))
 	for _, v := range sv {
@@ -287,7 +287,7 @@ func (t *EmbedSlice) Bools() []*EmbedBool {
 	return eb
 }
 
-func (t *EmbedSlice) Ints() []*EmbedInt {
+func (t *EmbedArray) Ints() []*EmbedInt {
 	sv := t.load()
 	ei := make([]*EmbedInt, 0, len(sv))
 	for _, v := range sv {
@@ -297,7 +297,7 @@ func (t *EmbedSlice) Ints() []*EmbedInt {
 	return ei
 }
 
-func (t *EmbedSlice) Uints() []*EmbedUint {
+func (t *EmbedArray) Uints() []*EmbedUint {
 	sv := t.load()
 	eu := make([]*EmbedUint, 0, len(sv))
 	for _, v := range sv {
@@ -307,7 +307,7 @@ func (t *EmbedSlice) Uints() []*EmbedUint {
 	return eu
 }
 
-func (t *EmbedSlice) Floats() []*EmbedFloat {
+func (t *EmbedArray) Floats() []*EmbedFloat {
 	sv := t.load()
 	ef := make([]*EmbedFloat, 0, len(sv))
 	for _, v := range sv {
@@ -317,22 +317,22 @@ func (t *EmbedSlice) Floats() []*EmbedFloat {
 	return ef
 }
 
-func (t *EmbedSlice) Slices(i int) *EmbedSlice {
+func (t *EmbedArray) ArrayAt(i int) *EmbedArray {
 	if !t.r {
-		panic("grc: only support two level map/slice")
+		panic("grc: only support two level map/array")
 	}
 	sv := t.load()
 	if i+1 > len(sv) {
 		panic("grc: index out of range")
 	}
-	return newEmbedSlice(strings.Split(sv[i], ","), false)
+	return newEmbedArray(strings.Split(sv[i], ","), false)
 }
 
-type Slice struct {
-	EmbedSlice
+type Array struct {
+	EmbedArray
 }
 
-func (t *Slice) Store(v string) {
+func (t *Array) Store(v string) {
 	if t.String() == v {
 		return
 	}
@@ -341,7 +341,7 @@ func (t *Slice) Store(v string) {
 	CallbackMgr.EvtChan() <- t
 }
 
-func (t *Slice) Changed(evt UpdateEvent) {
+func (t *Array) Changed(evt UpdateEvent) {
 	CallbackMgr.RegChan() <- &RegisterCallback{
 		Val: t,
 		Evt: evt,
@@ -386,13 +386,13 @@ func (t *EmbedMap) String() string {
 	return strings.Join(s, ",")
 }
 
-func (t *EmbedMap) Keys() *EmbedSlice {
+func (t *EmbedMap) Keys() *EmbedArray {
 	mv := t.load()
 	keys := make([]string, 0, len(mv))
 	for k := range mv {
 		keys = append(keys, k)
 	}
-	return newEmbedSlice(keys, false)
+	return newEmbedArray(keys, false)
 }
 
 func (t *EmbedMap) StringVal(key string) *EmbedString {
@@ -437,12 +437,12 @@ func (t *EmbedMap) FloatVal(key string) *EmbedFloat {
 	return &EmbedFloat{}
 }
 
-func (t *EmbedMap) SliceVal(key string) *EmbedSlice {
+func (t *EmbedMap) ArrayVal(key string) *EmbedArray {
 	if !t.r {
-		panic("grc: only support two level map/slice")
+		panic("grc: only support two level map/array")
 	}
 	mv := t.load()
-	return newEmbedSlice(strings.Split(mv[key], ","), false)
+	return newEmbedArray(strings.Split(mv[key], ","), false)
 }
 
 func (t *EmbedMap) parse(v, sep string) map[string]string {
@@ -461,7 +461,7 @@ func (t *EmbedMap) parse(v, sep string) map[string]string {
 
 func (t *EmbedMap) MapVal(key string) *EmbedMap {
 	if !t.r {
-		panic("grc: only support two level map/slice")
+		panic("grc: only support two level map/array")
 	}
 	mv := t.load()
 	m := t.parse(mv[key], ",")

@@ -3,10 +3,9 @@ package grc
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"log"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -14,10 +13,6 @@ import (
 	"github.com/appootb/grc/backend"
 	"github.com/appootb/grc/backend/etcd"
 	"github.com/appootb/grc/backend/memory"
-)
-
-var (
-	ErrUnknownProvider = errors.New("unknown provider type")
 )
 
 // An InvalidUnmarshalError describes an invalid argument passed to Unmarshal.
@@ -37,48 +32,79 @@ func (e *InvalidUnmarshalError) Error() string {
 	return "grc: Config type(nil " + e.Type.String() + ")"
 }
 
-type ProviderType string
+// A option sets options such as provider, autoCreation, etc.
+type Option interface {
+	apply(*RemoteConfig)
+}
 
-const (
-	Memory ProviderType = backend.Memory
-	Etcd   ProviderType = backend.Etcd
-)
+// funcServerOption wraps a function that modifies serverOptions into an
+// implementation of the ServerOption interface.
+type funcServerOption struct {
+	f func(*RemoteConfig)
+}
+
+func (fdo *funcServerOption) apply(do *RemoteConfig) {
+	fdo.f(do)
+}
+
+func newFuncServerOption(f func(*RemoteConfig)) *funcServerOption {
+	return &funcServerOption{
+		f: f,
+	}
+}
 
 type RemoteConfig struct {
-	svc      sync.Map
-	path     string
-	ctx      context.Context
-	provider backend.Provider
+	svc sync.Map
+	ctx context.Context
+
+	path         string
+	autoCreation bool
+	provider     backend.Provider
 }
 
-func New(ctx context.Context, pt ProviderType, endPoint, user, password, path string) (*RemoteConfig, error) {
-	var (
-		err      error
-		provider backend.Provider
-	)
-
-	switch pt {
-	case backend.Memory:
-		provider, err = memory.NewProvider()
-	case backend.Etcd:
-		provider, err = etcd.NewProvider(ctx, endPoint, user, password)
-	default:
-		err = ErrUnknownProvider
-	}
-
-	if err != nil {
-		return nil, err
-	}
-	return NewWithProvider(ctx, provider, path)
+func WithConfigAutoCreation() Option {
+	return newFuncServerOption(func(rc *RemoteConfig) {
+		rc.autoCreation = true
+	})
 }
 
-func NewWithProvider(ctx context.Context, provider backend.Provider, path string) (*RemoteConfig, error) {
+func WithBasePath(path string) Option {
+	return newFuncServerOption(func(rc *RemoteConfig) {
+		rc.path = path
+	})
+}
+
+func WithProvider(provider backend.Provider) Option {
+	return newFuncServerOption(func(rc *RemoteConfig) {
+		rc.provider = provider
+	})
+}
+
+func WithDebugProvider() Option {
+	return newFuncServerOption(func(rc *RemoteConfig) {
+		rc.provider = memory.NewProvider()
+	})
+}
+
+func WithEtcdProvider(ctx context.Context, endPoints []string, username, password string) Option {
+	return newFuncServerOption(func(rc *RemoteConfig) {
+		provider, err := etcd.NewProvider(ctx, endPoints, username, password)
+		if err != nil {
+			panic("grc: connect to etcd failed: " + err.Error())
+		}
+		rc.provider = provider
+	})
+}
+
+func New(ctx context.Context, opts ...Option) (*RemoteConfig, error) {
 	rc := &RemoteConfig{
-		path:     path,
-		ctx:      ctx,
-		provider: provider,
+		ctx: ctx,
 	}
-	basePath := fmt.Sprintf("%s/%s/", path, ServicePrefix)
+	for _, opt := range opts {
+		opt.apply(rc)
+	}
+
+	basePath := backend.ServiceDiscoveryPrefixKey(rc.path)
 	// Watch for service nodes updated.
 	evtChan := rc.provider.Watch(basePath, true)
 	// Get services.
@@ -93,19 +119,27 @@ func (rc *RemoteConfig) RegisterNode(service, nodeID string, ttl time.Duration) 
 	if ttl < time.Second {
 		ttl = time.Second
 	}
-	node := &DiscoveryNode{
-		NodeID: nodeID,
+	node := &backend.ServiceNode{
+		Service: service,
+		NodeID:  nodeID,
+		Weight:  backend.DefaultTrafficWeight,
 	}
-	key := fmt.Sprintf("%s/%s/%s/", rc.path, ServicePrefix, service)
+	weight, err := rc.provider.Get(backend.TrafficWeightKey(rc.path, service, nodeID), false)
+	if err != nil {
+		return err
+	} else if len(weight) > 0 {
+		node.Weight, err = strconv.Atoi(weight[0].Value)
+	}
+	key := backend.ServiceDiscoveryKey(rc.path, service, nodeID)
 	return rc.provider.KeepAlive(key, node.String(), ttl)
 }
 
-func (rc *RemoteConfig) GetService(service string) map[string]*DiscoveryNode {
+func (rc *RemoteConfig) GetService(service string) backend.ServiceNodes {
 	nodes, ok := rc.svc.Load(service)
 	if !ok {
-		return map[string]*DiscoveryNode{}
+		return backend.ServiceNodes{}
 	}
-	return nodes.(map[string]*DiscoveryNode)
+	return nodes.(map[string]*backend.ServiceNode)
 }
 
 func (rc *RemoteConfig) RegisterConfig(service string, v interface{}) error {
@@ -114,37 +148,50 @@ func (rc *RemoteConfig) RegisterConfig(service string, v interface{}) error {
 		return &InvalidUnmarshalError{reflect.TypeOf(cfg)}
 	}
 
-	basePath := fmt.Sprintf("%s/%s/%s/", rc.path, ConfigPrefix, service)
-	// Create default config value if not exist.
-	if kvs, err := rc.provider.Get(basePath, true); err != nil {
-		return err
-	} else if len(kvs) == 0 {
-		kvs := parseConfig(reflect.TypeOf(v), "").BackendKVs(basePath)
-		for k, v := range kvs {
-			err := rc.provider.Set(k, v, 0)
-			if err != nil {
-				return err
-			}
+	basePath := backend.ServiceConfigKey(rc.path, service)
+	// Create/update default config value if not exist.
+	if rc.autoCreation {
+		err := rc.remoteConfigMigration(basePath, reflect.TypeOf(v))
+		if err != nil {
+			return err
 		}
 	}
 
 	// Watch for config updated.
 	evtChan := rc.provider.Watch(basePath, true)
 	// Initialize the config.
-	if err := rc.getConfig(basePath, configElem(cfg)); err != nil {
+	if err := rc.getConfig(basePath, configElem(cfg), false); err != nil {
 		return err
 	}
 	go rc.watchConfigEvent(basePath, evtChan, configElem(cfg))
 	return nil
 }
 
-func (rc *RemoteConfig) getConfig(basePath string, cfg reflect.Value) error {
+func (rc *RemoteConfig) remoteConfigMigration(basePath string, t reflect.Type) error {
+	kvs, err := rc.provider.Get(basePath, true)
+	if err != nil {
+		return err
+	}
+	reflectKVs := parseConfig(t, "").KVs(basePath)
+	for _, kv := range kvs {
+		delete(reflectKVs, kv.Key)
+	}
+	for k, v := range reflectKVs {
+		err := rc.provider.Set(k, v, 0)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (rc *RemoteConfig) getConfig(basePath string, cfg reflect.Value, forUpdate bool) error {
 	kvs, err := rc.provider.Get(basePath, true)
 	if err != nil {
 		return err
 	}
 	for _, pair := range kvs {
-		err := rc.setConfig(basePath, pair, cfg, false)
+		err := rc.setConfig(basePath, pair, cfg, forUpdate)
 		if err != nil {
 			return err
 		}
@@ -153,22 +200,30 @@ func (rc *RemoteConfig) getConfig(basePath string, cfg reflect.Value) error {
 }
 
 func (rc *RemoteConfig) watchConfigEvent(basePath string, ch backend.EventChan, cfg reflect.Value) {
+	var (
+		err error
+	)
+
 	for {
 		select {
 		case <-rc.ctx.Done():
 			return
 
 		case evt := <-ch:
-			err := rc.setConfig(basePath, &evt.KVPair, cfg, true)
+			if evt.Type == backend.Reset {
+				err = rc.getConfig(basePath, cfg, true)
+			} else {
+				err = rc.setConfig(basePath, &evt.KVPair, cfg, true)
+			}
 			if err != nil {
-				log.Println("grc: updateConfig failed:", err.Error())
+				log.Println("grc: watchConfigEvent failed:", err.Error(), evt.Type, evt.Key)
 			}
 		}
 	}
 }
 
 func (rc *RemoteConfig) setConfig(basePath string, pair *backend.KVPair, cfg reflect.Value, forUpdate bool) error {
-	var item ConfigItem
+	var item backend.ConfigItem
 	if err := json.Unmarshal([]byte(pair.Value), &item); err != nil {
 		return err
 	}
@@ -194,20 +249,20 @@ func (rc *RemoteConfig) setConfig(basePath string, pair *backend.KVPair, cfg ref
 }
 
 func (rc *RemoteConfig) getServices(basePath string) error {
-	services := make(map[string]map[string]*DiscoveryNode)
+	services := make(map[string]backend.ServiceNodes)
 	kvs, err := rc.provider.Get(basePath, true)
 	if err != nil {
 		return err
 	}
 	for _, kv := range kvs {
-		var n DiscoveryNode
+		var n backend.ServiceNode
 		err := json.Unmarshal([]byte(kv.Value), &n)
 		if err != nil {
 			return err
 		}
 		svc, ok := services[n.Service]
 		if !ok {
-			svc = make(map[string]*DiscoveryNode)
+			svc = make(map[string]*backend.ServiceNode)
 			services[n.Service] = svc
 		}
 		svc[n.NodeID] = &n
@@ -223,9 +278,9 @@ func (rc *RemoteConfig) updateService(basePath, service string) error {
 	if err != nil {
 		return err
 	}
-	svc := make(map[string]*DiscoveryNode, len(kvs))
+	svc := make(map[string]*backend.ServiceNode, len(kvs))
 	for _, kv := range kvs {
-		var n DiscoveryNode
+		var n backend.ServiceNode
 		err := json.Unmarshal([]byte(kv.Value), &n)
 		if err != nil {
 			return err
@@ -237,20 +292,28 @@ func (rc *RemoteConfig) updateService(basePath, service string) error {
 }
 
 func (rc *RemoteConfig) watchServiceEvent(basePath string, ch backend.EventChan) {
+	var (
+		err error
+	)
+
 	for {
 		select {
 		case <-rc.ctx.Done():
-			err := rc.provider.Close()
+			err = rc.provider.Close()
 			if err != nil {
 				log.Println("grc: stopping.. close provider failed", err)
 			}
 			return
 
 		case evt := <-ch:
-			paths := strings.Split(strings.TrimPrefix(evt.Key, basePath), "/")
-			err := rc.updateService(basePath, paths[0])
+			if evt.Type == backend.Reset {
+				err = rc.getServices(basePath)
+			} else {
+				paths := strings.Split(strings.TrimPrefix(evt.Key, basePath), "/")
+				err = rc.updateService(basePath, paths[0])
+			}
 			if err != nil {
-				log.Println("grc: getService failed:", err.Error())
+				log.Println("grc: watchServiceEvent failed:", err.Error(), evt.Type, evt.Key)
 			}
 		}
 	}

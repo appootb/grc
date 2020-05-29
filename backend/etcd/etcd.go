@@ -3,12 +3,11 @@ package etcd
 import (
 	"context"
 	"log"
-	"strings"
 	"time"
 
 	"github.com/appootb/grc/backend"
+	"github.com/coreos/etcd/clientv3"
 	"github.com/coreos/etcd/mvcc/mvccpb"
-	"go.etcd.io/etcd/clientv3"
 )
 
 type Etcd struct {
@@ -16,12 +15,11 @@ type Etcd struct {
 	*clientv3.Client
 }
 
-func NewProvider(ctx context.Context, endPoint, user, password string) (backend.Provider, error) {
-	endPoints := strings.Split(endPoint, ",")
+func NewProvider(ctx context.Context, endPoints []string, username, password string) (backend.Provider, error) {
 	cli, err := clientv3.New(clientv3.Config{
 		Endpoints:   endPoints,
 		DialTimeout: backend.DialTimeout,
-		Username:    user,
+		Username:    username,
 		Password:    password,
 	})
 	if err != nil {
@@ -42,9 +40,9 @@ func (p *Etcd) Type() string {
 func (p *Etcd) Set(key, value string, ttl time.Duration) error {
 	var options []clientv3.OpOption
 	if ttl > 0 {
-		ctx, cancel := context.WithTimeout(p.ctx, backend.WriteTimeout)
-		lease, err := p.Grant(ctx, int64(ttl.Seconds()))
-		cancel()
+		leaseCtx, leaseCancel := context.WithTimeout(p.ctx, backend.WriteTimeout)
+		defer leaseCancel()
+		lease, err := p.Grant(leaseCtx, int64(ttl.Seconds()))
 		if err != nil {
 			return err
 		}
@@ -82,7 +80,15 @@ func (p *Etcd) Get(key string, dir bool) (backend.KVPairs, error) {
 
 // Delete the specified key or directory
 func (p *Etcd) Delete(key string, dir bool) error {
-	return nil
+	var options []clientv3.OpOption
+	if dir {
+		options = append(options, clientv3.WithPrefix())
+	}
+
+	ctx, cancel := context.WithTimeout(p.ctx, backend.WriteTimeout)
+	defer cancel()
+	_, err := p.Client.Delete(ctx, key, options...)
+	return err
 }
 
 // Watch for changes of the specified key or directory
@@ -92,8 +98,9 @@ func (p *Etcd) Watch(key string, dir bool) backend.EventChan {
 		options = append(options, clientv3.WithPrefix())
 	}
 
+	ctx, cancel := context.WithCancel(clientv3.WithRequireLeader(p.ctx))
 	eventsChan := make(backend.EventChan, backend.DefaultChanLen)
-	etcdChan := p.Client.Watch(p.ctx, key, options...)
+	etcdChan := p.Client.Watch(ctx, key, options...)
 
 	go func() {
 		for {
@@ -102,16 +109,24 @@ func (p *Etcd) Watch(key string, dir bool) backend.EventChan {
 				return
 
 			case resp := <-etcdChan:
-				if err := resp.Err(); err != nil {
-					log.Println("etcd watch failure", err)
-					// reset
-					time.Sleep(time.Second)
-					etcdChan = p.Client.Watch(p.ctx, key, options...)
+				if resp.Canceled {
+					// TODO
+					return
+				} else if resp.CompactRevision != 0 {
+					log.Println("grc: etcd required revision has been compacted")
+					// Watch again.
+					cancel()
+					ctx, cancel = context.WithCancel(clientv3.WithRequireLeader(p.ctx))
+					etcdChan = p.Client.Watch(ctx, key, options...)
 					eventsChan <- &backend.WatchEvent{
 						Type: backend.Reset,
 					}
 					continue
+				} else if err := resp.Err(); err != nil {
+					// TODO
+					log.Fatalln("grc: etcd watch error:", err.Error())
 				}
+
 				for _, evt := range resp.Events {
 					wEvent := &backend.WatchEvent{
 						KVPair: backend.KVPair{
@@ -163,6 +178,10 @@ func (p *Etcd) KeepAlive(key, value string, ttl time.Duration) error {
 			case <-ch:
 				// do nothing
 			case <-ctx.Done():
+				_, err = p.Client.Delete(context.TODO(), key)
+				if err != nil {
+					log.Println("grc: etcd KeepAlive stopping, ", err.Error())
+				}
 				return
 			}
 		}

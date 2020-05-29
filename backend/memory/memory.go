@@ -35,15 +35,15 @@ type Memory struct {
 	sync.RWMutex
 }
 
-func NewProvider() (backend.Provider, error) {
+func NewProvider() backend.Provider {
 	p := &Memory{
 		kvs:   make(map[string]*node),
 		event: make(backend.EventChan, 10),
 	}
-	p.ctx, p.cancel = context.WithCancel(context.TODO())
+	p.ctx, p.cancel = context.WithCancel(context.Background())
 	go p.checkTTL()
 	go p.checkWatch()
-	return p, nil
+	return p
 }
 
 // Return provider type
@@ -105,6 +105,18 @@ func (p *Memory) Get(key string, dir bool) (backend.KVPairs, error) {
 
 // Delete the specified key or directory
 func (p *Memory) Delete(key string, dir bool) error {
+	p.Lock()
+	defer p.Unlock()
+	if !dir {
+		delete(p.kvs, key)
+		return nil
+	}
+	//
+	for k := range p.kvs {
+		if strings.HasPrefix(k, key) {
+			delete(p.kvs, k)
+		}
+	}
 	return nil
 }
 

@@ -4,6 +4,8 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+
+	"github.com/appootb/grc/backend"
 )
 
 func isValidSystemType(t reflect.Type, depth int) bool {
@@ -38,12 +40,32 @@ func isBaseType(t reflect.Type) bool {
 		reflect.TypeOf(Int{}),
 		reflect.TypeOf(Uint{}),
 		reflect.TypeOf(Float{}),
-		reflect.TypeOf(Slice{}),
+		reflect.TypeOf(Array{}),
 		reflect.TypeOf(Map{}):
 		return true
 	default:
 		return false
 	}
+}
+
+func isSliceOrMap(t reflect.Type) bool {
+	switch t.Kind() {
+	case reflect.Ptr:
+		return isSliceOrMap(t.Elem())
+	case reflect.Slice, reflect.Array,
+		reflect.Map:
+		return true
+	default:
+		return t == reflect.TypeOf(Array{}) || t == reflect.TypeOf(Map{})
+	}
+}
+
+func formatDefaultValue(t reflect.Type, tag reflect.StructTag) string {
+	val := tag.Get("default")
+	if isSliceOrMap(t) && !strings.Contains(val, ";") {
+		val = strings.ReplaceAll(val, ",", ";")
+	}
+	return val
 }
 
 func configElem(v reflect.Value) reflect.Value {
@@ -53,21 +75,21 @@ func configElem(v reflect.Value) reflect.Value {
 	return v
 }
 
-func parseConfig(t reflect.Type, baseName string) ConfigItems {
+func parseConfig(t reflect.Type, baseName string) backend.ConfigItems {
 	if t.Kind() == reflect.Ptr {
 		return parseConfig(t.Elem(), baseName)
 	}
 	return parseConfigItems(t, baseName)
 }
 
-func parseConfigItems(t reflect.Type, baseName string) ConfigItems {
-	items := ConfigItems{}
+func parseConfigItems(t reflect.Type, baseName string) backend.ConfigItems {
+	items := backend.ConfigItems{}
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
 		if isBaseType(field.Type) || isValidSystemType(field.Type, 0) {
-			items[baseName+field.Name] = ConfigItem{
-				Type:    strings.Trim(field.Type.String(), "*"),
-				Value:   field.Tag.Get("default"),
+			items[baseName+field.Name] = &backend.ConfigItem{
+				Type:    strings.ReplaceAll(field.Type.String(), "*", ""),
+				Value:   formatDefaultValue(field.Type, field.Tag),
 				Comment: field.Tag.Get("comment"),
 			}
 		} else if field.Type.Kind() == reflect.Ptr {
