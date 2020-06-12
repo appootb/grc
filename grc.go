@@ -11,9 +11,15 @@ import (
 	"time"
 
 	"github.com/appootb/grc/backend"
-	"github.com/appootb/grc/backend/etcd"
-	"github.com/appootb/grc/backend/memory"
 )
+
+type DynamicValue interface {
+	AtomicUpdate(v string)
+}
+
+type StaticValue interface {
+	Set(v string)
+}
 
 // An InvalidUnmarshalError describes an invalid argument passed to Unmarshal.
 // (The argument to Unmarshal must be a non-nil pointer.)
@@ -32,27 +38,6 @@ func (e *InvalidUnmarshalError) Error() string {
 	return "grc: Config type(nil " + e.Type.String() + ")"
 }
 
-// A option sets options such as provider, autoCreation, etc.
-type Option interface {
-	apply(*RemoteConfig)
-}
-
-// funcServerOption wraps a function that modifies serverOptions into an
-// implementation of the ServerOption interface.
-type funcServerOption struct {
-	f func(*RemoteConfig)
-}
-
-func (fdo *funcServerOption) apply(do *RemoteConfig) {
-	fdo.f(do)
-}
-
-func newFuncServerOption(f func(*RemoteConfig)) *funcServerOption {
-	return &funcServerOption{
-		f: f,
-	}
-}
-
 type RemoteConfig struct {
 	svc sync.Map
 	ctx context.Context
@@ -60,40 +45,6 @@ type RemoteConfig struct {
 	path         string
 	autoCreation bool
 	provider     backend.Provider
-}
-
-func WithConfigAutoCreation() Option {
-	return newFuncServerOption(func(rc *RemoteConfig) {
-		rc.autoCreation = true
-	})
-}
-
-func WithBasePath(path string) Option {
-	return newFuncServerOption(func(rc *RemoteConfig) {
-		rc.path = path
-	})
-}
-
-func WithProvider(provider backend.Provider) Option {
-	return newFuncServerOption(func(rc *RemoteConfig) {
-		rc.provider = provider
-	})
-}
-
-func WithDebugProvider() Option {
-	return newFuncServerOption(func(rc *RemoteConfig) {
-		rc.provider = memory.NewProvider()
-	})
-}
-
-func WithEtcdProvider(ctx context.Context, endPoints []string, username, password string) Option {
-	return newFuncServerOption(func(rc *RemoteConfig) {
-		provider, err := etcd.NewProvider(ctx, endPoints, username, password)
-		if err != nil {
-			panic("grc: connect to etcd failed: " + err.Error())
-		}
-		rc.provider = provider
-	})
 }
 
 func New(ctx context.Context, opts ...Option) (*RemoteConfig, error) {
@@ -236,12 +187,12 @@ func (rc *RemoteConfig) setConfig(basePath string, pair *backend.KVPair, cfg ref
 			return nil
 		}
 	}
-	// Try set value as base type.
-	if setBaseTypeValue(item.Value, cfg) {
+	// Try DynamicValue.
+	if rc.updateDynamicValue(item.Value, cfg) {
 		return nil
 	}
-	// Try system type.
-	if forUpdate || setSystemTypeValue(item.Value, cfg, false) {
+	// Try StaticValue.
+	if forUpdate || rc.setStaticValue(item.Value, cfg) {
 		return nil
 	}
 	log.Println("grc: config not updated:", pair.Key, pair.Value)

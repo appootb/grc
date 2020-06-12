@@ -235,3 +235,38 @@ func Test_RegisterNode(t *testing.T) {
 		t.Fatal("no service node")
 	}
 }
+
+func Test_ParseDuration(t *testing.T) {
+	type Config struct {
+		Duration time.Duration `default:"1h"`
+	}
+	cfg := Config{}
+	err := grc.RegisterConfig("Test_ParseDuration", &cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Duration != time.Hour {
+		t.Fatal("actual:", cfg.Duration)
+	}
+}
+
+type Time time.Time
+
+func (t *Time) Set(v string) {
+	dt, _ := time.Parse(time.RFC3339, v)
+	*t = Time(dt)
+}
+
+func Test_CustomStaticType(t *testing.T) {
+	type Config struct {
+		TV Time `default:"2020-06-04T21:00:57-08:00"`
+	}
+	cfg := Config{}
+	err := grc.RegisterConfig("Test_CustomStaticType", &cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if time.Time(cfg.TV).Unix() != 1591333257 {
+		t.Fatal("actual:", cfg.TV)
+	}
+}

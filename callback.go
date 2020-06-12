@@ -9,24 +9,26 @@ var (
 	CallbackMgr = NewCallback()
 )
 
+type UpdateEvent func()
+
 type RegisterCallback struct {
-	Val AtomicUpdate
+	Val DynamicValue
 	Evt UpdateEvent
 }
 
 type Callback struct {
 	sync.RWMutex
-	events map[AtomicUpdate][]UpdateEvent
+	events map[DynamicValue][]UpdateEvent
 
-	evt chan AtomicUpdate
+	evt chan DynamicValue
 	fn  chan *RegisterCallback
 }
 
 func NewCallback() *Callback {
 	c := &Callback{
-		evt:    make(chan AtomicUpdate, 50),
+		evt:    make(chan DynamicValue, 50),
 		fn:     make(chan *RegisterCallback, 50),
-		events: make(map[AtomicUpdate][]UpdateEvent),
+		events: make(map[DynamicValue][]UpdateEvent),
 	}
 	go c.operate()
 	return c
@@ -36,7 +38,7 @@ func (c *Callback) RegChan() chan<- *RegisterCallback {
 	return c.fn
 }
 
-func (c *Callback) EvtChan() chan<- AtomicUpdate {
+func (c *Callback) EvtChan() chan<- DynamicValue {
 	return c.evt
 }
 

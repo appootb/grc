@@ -4,13 +4,22 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/appootb/grc/backend"
 )
 
-func isValidSystemType(t reflect.Type, depth int) bool {
+var (
+	staticType  = reflect.TypeOf((*StaticValue)(nil)).Elem()
+	dynamicType = reflect.TypeOf((*DynamicValue)(nil)).Elem()
+)
+
+func isSupportedType(t reflect.Type, depth int) bool {
 	if t.Kind() == reflect.Ptr {
-		return isValidSystemType(t.Elem(), depth)
+		return isSupportedType(t.Elem(), depth)
+	}
+	if reflect.New(t).Type().Implements(dynamicType) || reflect.New(t).Type().Implements(staticType) {
+		return true
 	}
 	switch t.Kind() {
 	case reflect.String,
@@ -24,25 +33,7 @@ func isValidSystemType(t reflect.Type, depth int) bool {
 		if depth > 1 {
 			return false
 		}
-		return isValidSystemType(t.Elem(), depth+1)
-	default:
-		return false
-	}
-}
-
-func isBaseType(t reflect.Type) bool {
-	if t.Kind() == reflect.Ptr {
-		return isBaseType(t.Elem())
-	}
-	switch t {
-	case reflect.TypeOf(String{}),
-		reflect.TypeOf(Bool{}),
-		reflect.TypeOf(Int{}),
-		reflect.TypeOf(Uint{}),
-		reflect.TypeOf(Float{}),
-		reflect.TypeOf(Array{}),
-		reflect.TypeOf(Map{}):
-		return true
+		return isSupportedType(t.Elem(), depth+1)
 	default:
 		return false
 	}
@@ -86,7 +77,7 @@ func parseConfigItems(t reflect.Type, baseName string) backend.ConfigItems {
 	items := backend.ConfigItems{}
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
-		if isBaseType(field.Type) || isValidSystemType(field.Type, 0) {
+		if isSupportedType(field.Type, 0) {
 			items[baseName+field.Name] = &backend.ConfigItem{
 				Type:    strings.ReplaceAll(field.Type.String(), "*", ""),
 				Value:   formatDefaultValue(field.Type, field.Tag),
@@ -103,7 +94,45 @@ func parseConfigItems(t reflect.Type, baseName string) backend.ConfigItems {
 	return items
 }
 
-func setSystemTypeValue(s string, v reflect.Value, recursion bool) bool {
+func (rc *RemoteConfig) updateDynamicValue(s string, v reflect.Value) bool {
+	if v.CanInterface() {
+		if v.Type().Kind() == reflect.Ptr && v.IsNil() {
+			v.Set(reflect.New(v.Type().Elem()))
+		}
+		if u, ok := v.Interface().(DynamicValue); ok {
+			u.AtomicUpdate(s)
+			return true
+		}
+	}
+	if v.CanAddr() && v.Addr().CanInterface() {
+		if u, ok := v.Addr().Interface().(DynamicValue); ok {
+			u.AtomicUpdate(s)
+			return true
+		}
+	}
+	return false
+}
+
+func (rc *RemoteConfig) setStaticValue(s string, v reflect.Value) bool {
+	if v.CanInterface() {
+		if v.Type().Kind() == reflect.Ptr && v.IsNil() {
+			v.Set(reflect.New(v.Type().Elem()))
+		}
+		if u, ok := v.Interface().(StaticValue); ok {
+			u.Set(s)
+			return true
+		}
+	}
+	if v.CanAddr() && v.Addr().CanInterface() {
+		if u, ok := v.Addr().Interface().(StaticValue); ok {
+			u.Set(s)
+			return true
+		}
+	}
+	return rc.setSystemTypeValue(s, v, false)
+}
+
+func (rc *RemoteConfig) setSystemTypeValue(s string, v reflect.Value, recursion bool) bool {
 	// Used for slice or map value.
 	sep := ";"
 	if recursion {
@@ -113,7 +142,7 @@ func setSystemTypeValue(s string, v reflect.Value, recursion bool) bool {
 	switch v.Type().Kind() {
 	case reflect.Ptr:
 		e := reflect.New(v.Type().Elem())
-		setSystemTypeValue(s, e.Elem(), false)
+		rc.setSystemTypeValue(s, e.Elem(), false)
 		v.Set(e)
 	case reflect.String:
 		v.SetString(s)
@@ -121,8 +150,13 @@ func setSystemTypeValue(s string, v reflect.Value, recursion bool) bool {
 		bv, _ := strconv.ParseBool(s)
 		v.SetBool(bv)
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		iv, _ := strconv.ParseInt(s, 10, 64)
-		v.SetInt(iv)
+		if v.Type() == reflect.TypeOf(time.Second) {
+			dur, _ := time.ParseDuration(s)
+			v.SetInt(int64(dur))
+		} else {
+			iv, _ := strconv.ParseInt(s, 10, 64)
+			v.SetInt(iv)
+		}
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
 		uv, _ := strconv.ParseUint(s, 10, 64)
 		v.SetUint(uv)
@@ -133,7 +167,7 @@ func setSystemTypeValue(s string, v reflect.Value, recursion bool) bool {
 		fields := strings.Split(s, sep)
 		sv := reflect.MakeSlice(v.Type(), len(fields), len(fields))
 		for i, field := range fields {
-			setSystemTypeValue(field, sv.Index(i), true)
+			rc.setSystemTypeValue(field, sv.Index(i), true)
 		}
 		v.Set(sv)
 	case reflect.Map:
@@ -143,9 +177,9 @@ func setSystemTypeValue(s string, v reflect.Value, recursion bool) bool {
 			kv := strings.SplitN(vv, ":", 2)
 			k := reflect.New(v.Type().Key())
 			v := reflect.New(v.Type().Elem())
-			setSystemTypeValue(kv[0], k.Elem(), true)
+			rc.setSystemTypeValue(kv[0], k.Elem(), true)
 			if len(kv) > 1 {
-				setSystemTypeValue(kv[1], v.Elem(), true)
+				rc.setSystemTypeValue(kv[1], v.Elem(), true)
 			}
 			mv.SetMapIndex(k.Elem(), v.Elem())
 		}
@@ -154,23 +188,4 @@ func setSystemTypeValue(s string, v reflect.Value, recursion bool) bool {
 		return false
 	}
 	return true
-}
-
-func setBaseTypeValue(s string, v reflect.Value) bool {
-	if v.CanInterface() {
-		if v.Type().Kind() == reflect.Ptr && v.IsNil() {
-			v.Set(reflect.New(v.Type().Elem()))
-		}
-		if u, ok := v.Interface().(AtomicUpdate); ok {
-			u.Store(s)
-			return true
-		}
-	}
-	if v.CanAddr() && v.Addr().CanInterface() {
-		if u, ok := v.Addr().Interface().(AtomicUpdate); ok {
-			u.Store(s)
-			return true
-		}
-	}
-	return false
 }
