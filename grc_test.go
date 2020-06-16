@@ -21,7 +21,7 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		panic("initialize failed:" + err.Error())
 	}
-	grc = rc
+	grc = rc.(*RemoteConfig)
 	m.Run()
 }
 

@@ -5,44 +5,49 @@ import (
 	"sync"
 )
 
-var (
-	CallbackMgr = NewCallback()
-)
-
 type UpdateEvent func()
 
-type RegisterCallback struct {
+type CallbackFunc struct {
 	Val DynamicValue
 	Evt UpdateEvent
 }
 
-type Callback struct {
+type Callback interface {
+	RegChan() chan<- *CallbackFunc
+	EvtChan() chan<- DynamicValue
+}
+
+var (
+	callbackMgr = newCallback()
+)
+
+type callback struct {
 	sync.RWMutex
 	events map[DynamicValue][]UpdateEvent
 
 	evt chan DynamicValue
-	fn  chan *RegisterCallback
+	fn  chan *CallbackFunc
 }
 
-func NewCallback() *Callback {
-	c := &Callback{
+func newCallback() Callback {
+	c := &callback{
 		evt:    make(chan DynamicValue, 50),
-		fn:     make(chan *RegisterCallback, 50),
+		fn:     make(chan *CallbackFunc, 50),
 		events: make(map[DynamicValue][]UpdateEvent),
 	}
 	go c.operate()
 	return c
 }
 
-func (c *Callback) RegChan() chan<- *RegisterCallback {
+func (c *callback) RegChan() chan<- *CallbackFunc {
 	return c.fn
 }
 
-func (c *Callback) EvtChan() chan<- DynamicValue {
+func (c *callback) EvtChan() chan<- DynamicValue {
 	return c.evt
 }
 
-func (c *Callback) operate() {
+func (c *callback) operate() {
 	for {
 		select {
 		case fn := <-c.fn:

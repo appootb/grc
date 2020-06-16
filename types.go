@@ -35,11 +35,11 @@ func (t *String) AtomicUpdate(v string) {
 		return
 	}
 	t.v.Store(v)
-	CallbackMgr.EvtChan() <- t
+	callbackMgr.EvtChan() <- t
 }
 
 func (t *String) Changed(evt UpdateEvent) {
-	CallbackMgr.RegChan() <- &RegisterCallback{
+	callbackMgr.RegChan() <- &CallbackFunc{
 		Val: t,
 		Evt: evt,
 	}
@@ -71,11 +71,11 @@ func (t *Bool) AtomicUpdate(v string) {
 	} else {
 		atomic.StoreInt32(&t.v, 0)
 	}
-	CallbackMgr.EvtChan() <- t
+	callbackMgr.EvtChan() <- t
 }
 
 func (t *Bool) Changed(evt UpdateEvent) {
-	CallbackMgr.RegChan() <- &RegisterCallback{
+	callbackMgr.RegChan() <- &CallbackFunc{
 		Val: t,
 		Evt: evt,
 	}
@@ -119,11 +119,11 @@ func (t *Int) AtomicUpdate(v string) {
 		return
 	}
 	atomic.StoreInt64(&t.v, iv)
-	CallbackMgr.EvtChan() <- t
+	callbackMgr.EvtChan() <- t
 }
 
 func (t *Int) Changed(evt UpdateEvent) {
-	CallbackMgr.RegChan() <- &RegisterCallback{
+	callbackMgr.RegChan() <- &CallbackFunc{
 		Val: t,
 		Evt: evt,
 	}
@@ -167,11 +167,11 @@ func (t *Uint) AtomicUpdate(v string) {
 		return
 	}
 	atomic.StoreUint64(&t.v, uv)
-	CallbackMgr.EvtChan() <- t
+	callbackMgr.EvtChan() <- t
 }
 
 func (t *Uint) Changed(evt UpdateEvent) {
-	CallbackMgr.RegChan() <- &RegisterCallback{
+	callbackMgr.RegChan() <- &CallbackFunc{
 		Val: t,
 		Evt: evt,
 	}
@@ -213,11 +213,11 @@ func (t *Float) AtomicUpdate(v string) {
 		return
 	}
 	t.v.Store(fv)
-	CallbackMgr.EvtChan() <- t
+	callbackMgr.EvtChan() <- t
 }
 
 func (t *Float) Changed(evt UpdateEvent) {
-	CallbackMgr.RegChan() <- &RegisterCallback{
+	callbackMgr.RegChan() <- &CallbackFunc{
 		Val: t,
 		Evt: evt,
 	}
@@ -332,11 +332,11 @@ func (t *Array) AtomicUpdate(v string) {
 	}
 	sv := strings.Split(v, ";")
 	t.v.Store(sv)
-	CallbackMgr.EvtChan() <- t
+	callbackMgr.EvtChan() <- t
 }
 
 func (t *Array) Changed(evt UpdateEvent) {
-	CallbackMgr.RegChan() <- &RegisterCallback{
+	callbackMgr.RegChan() <- &CallbackFunc{
 		Val: t,
 		Evt: evt,
 	}
@@ -472,11 +472,11 @@ func (t *Map) AtomicUpdate(v string) {
 	}
 	mv := t.parse(v, ";")
 	t.v.Store(mv)
-	CallbackMgr.EvtChan() <- t
+	callbackMgr.EvtChan() <- t
 }
 
 func (t *Map) Changed(evt UpdateEvent) {
-	CallbackMgr.RegChan() <- &RegisterCallback{
+	callbackMgr.RegChan() <- &CallbackFunc{
 		Val: t,
 		Evt: evt,
 	}

@@ -13,11 +13,30 @@ import (
 	"github.com/appootb/grc/backend"
 )
 
-type DynamicValue interface {
-	AtomicUpdate(v string)
+// RemoteConfig Discovery interface.
+type Discovery interface {
+	// Register remote configuration.
+	RegisterConfig(service string, v interface{}) error
+
+	// Register service node.
+	RegisterNode(service, nodeID string, ttl time.Duration) error
+
+	// Get all nodes of specified service.
+	GetService(service string) backend.ServiceNodes
 }
 
+// Dynamic value interface.
+type DynamicValue interface {
+	// Atomic update value.
+	AtomicUpdate(v string)
+
+	// Register value changed event.
+	Changed(evt UpdateEvent)
+}
+
+// Static value interface.
 type StaticValue interface {
+	// Set value.
 	Set(v string)
 }
 
@@ -47,7 +66,7 @@ type RemoteConfig struct {
 	provider     backend.Provider
 }
 
-func New(ctx context.Context, opts ...Option) (*RemoteConfig, error) {
+func New(ctx context.Context, opts ...Option) (Discovery, error) {
 	rc := &RemoteConfig{
 		ctx: ctx,
 	}

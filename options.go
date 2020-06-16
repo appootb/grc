@@ -62,3 +62,9 @@ func WithEtcdProvider(ctx context.Context, endPoints []string, username, passwor
 		rc.provider = provider
 	})
 }
+
+func WithCallbackManger(mgr Callback) Option {
+	return newFuncServerOption(func(_ *RemoteConfig) {
+		callbackMgr = mgr
+	})
+}
