@@ -224,7 +224,7 @@ func Test_RegisterNode(t *testing.T) {
 		t.Fatal(err)
 	}
 	time.Sleep(time.Second)
-	svc := grc.GetService("Test_RegisterNode")
+	svc := grc.GetNodes("Test_RegisterNode")
 	if _, ok := svc["abcdef"]; !ok {
 		t.Fatal("no service node")
 	}

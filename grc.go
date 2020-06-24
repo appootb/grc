@@ -77,7 +77,7 @@ func (rc *RemoteConfig) RegisterNode(service, nodeAddr string, ttl time.Duration
 	return rc.provider.KeepAlive(key, node.String(), ttl)
 }
 
-func (rc *RemoteConfig) GetService(service string) map[string]int {
+func (rc *RemoteConfig) GetNodes(service string) map[string]int {
 	nodes, ok := rc.svc.Load(service)
 	if !ok {
 		return backend.ServiceNodes{}
