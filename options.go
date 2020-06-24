@@ -29,6 +29,12 @@ func newFuncServerOption(f func(*RemoteConfig)) *funcServerOption {
 	}
 }
 
+func WithContext(ctx context.Context) Option {
+	return newFuncServerOption(func(rc *RemoteConfig) {
+		rc.ctx = ctx
+	})
+}
+
 func WithConfigAutoCreation() Option {
 	return newFuncServerOption(func(rc *RemoteConfig) {
 		rc.autoCreation = true

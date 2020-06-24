@@ -13,33 +13,6 @@ import (
 	"github.com/appootb/grc/backend"
 )
 
-// RemoteConfig Discovery interface.
-type Discovery interface {
-	// Register remote configuration.
-	RegisterConfig(service string, v interface{}) error
-
-	// Register service node.
-	RegisterNode(service, nodeID string, ttl time.Duration) error
-
-	// Get all nodes of specified service.
-	GetService(service string) backend.ServiceNodes
-}
-
-// Dynamic value interface.
-type DynamicValue interface {
-	// Atomic update value.
-	AtomicUpdate(v string)
-
-	// Register value changed event.
-	Changed(evt UpdateEvent)
-}
-
-// Static value interface.
-type StaticValue interface {
-	// Set value.
-	Set(v string)
-}
-
 // An InvalidUnmarshalError describes an invalid argument passed to Unmarshal.
 // (The argument to Unmarshal must be a non-nil pointer.)
 type InvalidUnmarshalError struct {
@@ -66,9 +39,9 @@ type RemoteConfig struct {
 	provider     backend.Provider
 }
 
-func New(ctx context.Context, opts ...Option) (Discovery, error) {
+func New(opts ...Option) (*RemoteConfig, error) {
 	rc := &RemoteConfig{
-		ctx: ctx,
+		ctx: context.Background(),
 	}
 	for _, opt := range opts {
 		opt.apply(rc)
@@ -85,31 +58,31 @@ func New(ctx context.Context, opts ...Option) (Discovery, error) {
 	return rc, nil
 }
 
-func (rc *RemoteConfig) RegisterNode(service, nodeID string, ttl time.Duration) error {
+func (rc *RemoteConfig) RegisterNode(service, nodeAddr string, ttl time.Duration) error {
 	if ttl < time.Second {
 		ttl = time.Second
 	}
 	node := &backend.ServiceNode{
-		Service: service,
-		NodeID:  nodeID,
-		Weight:  backend.DefaultTrafficWeight,
+		Service:  service,
+		NodeAddr: nodeAddr,
+		Weight:   backend.DefaultTrafficWeight,
 	}
-	weight, err := rc.provider.Get(backend.TrafficWeightKey(rc.path, service, nodeID), false)
+	weight, err := rc.provider.Get(backend.TrafficWeightKey(rc.path, service, nodeAddr), false)
 	if err != nil {
 		return err
 	} else if len(weight) > 0 {
-		node.Weight, err = strconv.Atoi(weight[0].Value)
+		node.Weight, _ = strconv.Atoi(weight[0].Value)
 	}
-	key := backend.ServiceDiscoveryKey(rc.path, service, nodeID)
+	key := backend.ServiceDiscoveryKey(rc.path, service, nodeAddr)
 	return rc.provider.KeepAlive(key, node.String(), ttl)
 }
 
-func (rc *RemoteConfig) GetService(service string) backend.ServiceNodes {
+func (rc *RemoteConfig) GetService(service string) map[string]int {
 	nodes, ok := rc.svc.Load(service)
 	if !ok {
 		return backend.ServiceNodes{}
 	}
-	return nodes.(map[string]*backend.ServiceNode)
+	return nodes.(backend.ServiceNodes)
 }
 
 func (rc *RemoteConfig) RegisterConfig(service string, v interface{}) error {
@@ -211,7 +184,7 @@ func (rc *RemoteConfig) setConfig(basePath string, pair *backend.KVPair, cfg ref
 		return nil
 	}
 	// Try StaticValue.
-	if forUpdate || rc.setStaticValue(item.Value, cfg) {
+	if forUpdate || rc.setStaticValue(item.Value, cfg, false) {
 		return nil
 	}
 	log.Println("grc: config not updated:", pair.Key, pair.Value)
@@ -232,10 +205,10 @@ func (rc *RemoteConfig) getServices(basePath string) error {
 		}
 		svc, ok := services[n.Service]
 		if !ok {
-			svc = make(map[string]*backend.ServiceNode)
+			svc = make(backend.ServiceNodes)
 			services[n.Service] = svc
 		}
-		svc[n.NodeID] = &n
+		svc[n.NodeAddr] = n.Weight
 	}
 	for name, svc := range services {
 		rc.svc.Store(name, svc)
@@ -248,14 +221,14 @@ func (rc *RemoteConfig) updateService(basePath, service string) error {
 	if err != nil {
 		return err
 	}
-	svc := make(map[string]*backend.ServiceNode, len(kvs))
+	svc := make(backend.ServiceNodes, len(kvs))
 	for _, kv := range kvs {
 		var n backend.ServiceNode
 		err := json.Unmarshal([]byte(kv.Value), &n)
 		if err != nil {
 			return err
 		}
-		svc[n.NodeID] = &n
+		svc[n.NodeAddr] = n.Weight
 	}
 	rc.svc.Store(service, svc)
 	return nil

@@ -9,17 +9,18 @@ import (
 	"github.com/appootb/grc/backend"
 )
 
+const (
+	ExceedDeepLevel = "grc: only support two level map/array"
+)
+
 var (
-	staticType  = reflect.TypeOf((*StaticValue)(nil)).Elem()
-	dynamicType = reflect.TypeOf((*DynamicValue)(nil)).Elem()
+	staticType  = reflect.TypeOf((*StaticType)(nil)).Elem()
+	dynamicType = reflect.TypeOf((*DynamicType)(nil)).Elem()
 )
 
 func isSupportedType(t reflect.Type, depth int) bool {
 	if t.Kind() == reflect.Ptr {
 		return isSupportedType(t.Elem(), depth)
-	}
-	if reflect.New(t).Type().Implements(dynamicType) || reflect.New(t).Type().Implements(staticType) {
-		return true
 	}
 	switch t.Kind() {
 	case reflect.String,
@@ -31,11 +32,18 @@ func isSupportedType(t reflect.Type, depth int) bool {
 	case reflect.Slice, reflect.Array,
 		reflect.Map:
 		if depth > 1 {
-			return false
+			panic(ExceedDeepLevel)
 		}
 		return isSupportedType(t.Elem(), depth+1)
 	default:
-		return false
+		t = reflect.New(t).Type()
+		if t.Implements(dynamicType) {
+			if depth > 0 {
+				panic(ExceedDeepLevel)
+			}
+			return true
+		}
+		return t.Implements(staticType)
 	}
 }
 
@@ -80,6 +88,7 @@ func parseConfigItems(t reflect.Type, baseName string) backend.ConfigItems {
 		if isSupportedType(field.Type, 0) {
 			items[baseName+field.Name] = &backend.ConfigItem{
 				Type:    strings.ReplaceAll(field.Type.String(), "*", ""),
+				Hint:    "", // TODO
 				Value:   formatDefaultValue(field.Type, field.Tag),
 				Comment: field.Tag.Get("comment"),
 			}
@@ -99,13 +108,13 @@ func (rc *RemoteConfig) updateDynamicValue(s string, v reflect.Value) bool {
 		if v.Type().Kind() == reflect.Ptr && v.IsNil() {
 			v.Set(reflect.New(v.Type().Elem()))
 		}
-		if u, ok := v.Interface().(DynamicValue); ok {
+		if u, ok := v.Interface().(DynamicType); ok {
 			u.AtomicUpdate(s)
 			return true
 		}
 	}
 	if v.CanAddr() && v.Addr().CanInterface() {
-		if u, ok := v.Addr().Interface().(DynamicValue); ok {
+		if u, ok := v.Addr().Interface().(DynamicType); ok {
 			u.AtomicUpdate(s)
 			return true
 		}
@@ -113,23 +122,23 @@ func (rc *RemoteConfig) updateDynamicValue(s string, v reflect.Value) bool {
 	return false
 }
 
-func (rc *RemoteConfig) setStaticValue(s string, v reflect.Value) bool {
+func (rc *RemoteConfig) setStaticValue(s string, v reflect.Value, recursion bool) bool {
 	if v.CanInterface() {
 		if v.Type().Kind() == reflect.Ptr && v.IsNil() {
 			v.Set(reflect.New(v.Type().Elem()))
 		}
-		if u, ok := v.Interface().(StaticValue); ok {
+		if u, ok := v.Interface().(StaticType); ok {
 			u.Set(s)
 			return true
 		}
 	}
 	if v.CanAddr() && v.Addr().CanInterface() {
-		if u, ok := v.Addr().Interface().(StaticValue); ok {
+		if u, ok := v.Addr().Interface().(StaticType); ok {
 			u.Set(s)
 			return true
 		}
 	}
-	return rc.setSystemTypeValue(s, v, false)
+	return rc.setSystemTypeValue(s, v, recursion)
 }
 
 func (rc *RemoteConfig) setSystemTypeValue(s string, v reflect.Value, recursion bool) bool {
@@ -142,7 +151,7 @@ func (rc *RemoteConfig) setSystemTypeValue(s string, v reflect.Value, recursion 
 	switch v.Type().Kind() {
 	case reflect.Ptr:
 		e := reflect.New(v.Type().Elem())
-		rc.setSystemTypeValue(s, e.Elem(), false)
+		rc.setStaticValue(s, e.Elem(), false)
 		v.Set(e)
 	case reflect.String:
 		v.SetString(s)
@@ -167,7 +176,7 @@ func (rc *RemoteConfig) setSystemTypeValue(s string, v reflect.Value, recursion 
 		fields := strings.Split(s, sep)
 		sv := reflect.MakeSlice(v.Type(), len(fields), len(fields))
 		for i, field := range fields {
-			rc.setSystemTypeValue(field, sv.Index(i), true)
+			rc.setStaticValue(field, sv.Index(i), true)
 		}
 		v.Set(sv)
 	case reflect.Map:
@@ -177,9 +186,9 @@ func (rc *RemoteConfig) setSystemTypeValue(s string, v reflect.Value, recursion 
 			kv := strings.SplitN(vv, ":", 2)
 			k := reflect.New(v.Type().Key())
 			v := reflect.New(v.Type().Elem())
-			rc.setSystemTypeValue(kv[0], k.Elem(), true)
+			rc.setStaticValue(kv[0], k.Elem(), true)
 			if len(kv) > 1 {
-				rc.setSystemTypeValue(kv[1], v.Elem(), true)
+				rc.setStaticValue(kv[1], v.Elem(), true)
 			}
 			mv.SetMapIndex(k.Elem(), v.Elem())
 		}

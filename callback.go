@@ -8,13 +8,13 @@ import (
 type UpdateEvent func()
 
 type CallbackFunc struct {
-	Val DynamicValue
+	Val DynamicType
 	Evt UpdateEvent
 }
 
 type Callback interface {
 	RegChan() chan<- *CallbackFunc
-	EvtChan() chan<- DynamicValue
+	EvtChan() chan<- DynamicType
 }
 
 var (
@@ -23,17 +23,17 @@ var (
 
 type callback struct {
 	sync.RWMutex
-	events map[DynamicValue][]UpdateEvent
+	events map[DynamicType][]UpdateEvent
 
-	evt chan DynamicValue
+	evt chan DynamicType
 	fn  chan *CallbackFunc
 }
 
 func newCallback() Callback {
 	c := &callback{
-		evt:    make(chan DynamicValue, 50),
+		evt:    make(chan DynamicType, 50),
 		fn:     make(chan *CallbackFunc, 50),
-		events: make(map[DynamicValue][]UpdateEvent),
+		events: make(map[DynamicType][]UpdateEvent),
 	}
 	go c.operate()
 	return c
@@ -43,7 +43,7 @@ func (c *callback) RegChan() chan<- *CallbackFunc {
 	return c.fn
 }
 
-func (c *callback) EvtChan() chan<- DynamicValue {
+func (c *callback) EvtChan() chan<- DynamicType {
 	return c.evt
 }
 

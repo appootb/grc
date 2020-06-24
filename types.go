@@ -8,6 +8,21 @@ import (
 	"sync/atomic"
 )
 
+// Dynamic type interface.
+type DynamicType interface {
+	// Atomic update value.
+	AtomicUpdate(v string)
+
+	// Register value changed event.
+	Changed(evt UpdateEvent)
+}
+
+// Static type interface.
+type StaticType interface {
+	// Set value.
+	Set(v string)
+}
+
 type embedString struct {
 	v atomic.Value
 }
@@ -313,7 +328,7 @@ func (t *embedArray) Floats() []*embedFloat {
 
 func (t *embedArray) ArrayAt(i int) *embedArray {
 	if !t.r {
-		panic("grc: only support two level map/array")
+		panic(ExceedDeepLevel)
 	}
 	sv := t.load()
 	if i+1 > len(sv) {
@@ -433,7 +448,7 @@ func (t *embedMap) FloatVal(key string) *embedFloat {
 
 func (t *embedMap) ArrayVal(key string) *embedArray {
 	if !t.r {
-		panic("grc: only support two level map/array")
+		panic(ExceedDeepLevel)
 	}
 	mv := t.load()
 	return newEmbedArray(strings.Split(mv[key], ","), false)
@@ -455,7 +470,7 @@ func (t *embedMap) parse(v, sep string) map[string]string {
 
 func (t *embedMap) MapVal(key string) *embedMap {
 	if !t.r {
-		panic("grc: only support two level map/array")
+		panic(ExceedDeepLevel)
 	}
 	mv := t.load()
 	m := t.parse(mv[key], ",")

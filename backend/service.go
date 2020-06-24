@@ -25,9 +25,9 @@ func TrafficWeightKey(path, service, node string) string {
 }
 
 type ServiceNode struct {
-	Service string `json:"service"`
-	NodeID  string `json:"node_id"`
-	Weight  int    `json:"weight"`
+	Service  string `json:"service"`
+	NodeAddr string `json:"node_addr"`
+	Weight   int    `json:"weight"`
 }
 
 func (n ServiceNode) String() string {
@@ -35,4 +35,4 @@ func (n ServiceNode) String() string {
 	return string(v)
 }
 
-type ServiceNodes map[string]*ServiceNode
+type ServiceNodes map[string]int

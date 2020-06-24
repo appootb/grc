@@ -14,10 +14,10 @@ func ServiceConfigKey(path, service string) string {
 }
 
 type ConfigItem struct {
-	Type     string `json:"type"`
-	HintType string `json:"hint_type"`
-	Value    string `json:"value"`
-	Comment  string `json:"comment"`
+	Type    string `json:"type"`
+	Hint    string `json:"hint"`
+	Value   string `json:"value"`
+	Comment string `json:"comment"`
 }
 
 func (c ConfigItem) String() string {

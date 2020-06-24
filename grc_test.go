@@ -1,7 +1,6 @@
 package grc
 
 import (
-	"context"
 	"reflect"
 	"testing"
 	"time"
@@ -14,14 +13,9 @@ var (
 )
 
 func TestMain(m *testing.M) {
-	rc, err := New(context.TODO(),
-		WithDebugProvider(),
+	grc, _ = New(WithDebugProvider(),
 		WithConfigAutoCreation(),
 		WithBasePath("/test"))
-	if err != nil {
-		panic("initialize failed:" + err.Error())
-	}
-	grc = rc.(*RemoteConfig)
 	m.Run()
 }
 
@@ -268,5 +262,28 @@ func Test_CustomStaticType(t *testing.T) {
 	}
 	if time.Time(cfg.TV).Unix() != 1591333257 {
 		t.Fatal("actual:", cfg.TV)
+	}
+}
+
+type Embed struct {
+	time.Time
+}
+
+func (t *Embed) Set(v string) {
+	dt, _ := time.Parse("2006-01-02 15:04:05", v)
+	t.Time = dt
+}
+
+func Test_CustomEmbedType(t *testing.T) {
+	type Config struct {
+		EV []Embed `default:"2020-06-01 10:00:00,2020-07-01 12:00:00"`
+	}
+	cfg := Config{}
+	err := grc.RegisterConfig("Test_CustomEmbedType", &cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.EV) != 2 || cfg.EV[0].Unix() != 1591005600 || cfg.EV[1].Unix() != 1593604800 {
+		t.Fatal("actual", cfg.EV)
 	}
 }
