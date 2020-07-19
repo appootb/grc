@@ -38,7 +38,7 @@ type Memory struct {
 func NewProvider() backend.Provider {
 	p := &Memory{
 		kvs:   make(map[string]*node),
-		event: make(backend.EventChan, 10),
+		event: make(backend.EventChan, 500),
 	}
 	p.ctx, p.cancel = context.WithCancel(context.Background())
 	go p.checkTTL()
