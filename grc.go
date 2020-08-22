@@ -58,31 +58,33 @@ func New(opts ...Option) (*RemoteConfig, error) {
 	return rc, nil
 }
 
-func (rc *RemoteConfig) RegisterNode(service, nodeAddr string, ttl time.Duration) error {
-	if ttl < time.Second {
-		ttl = time.Second
-	}
-	node := &backend.ServiceNode{
+func (rc *RemoteConfig) RegisterNode(service string, opts ...NodeOption) error {
+	node := &Node{
+		TTL:      time.Second * 3,
 		Service:  service,
-		NodeAddr: nodeAddr,
-		Weight:   backend.DefaultTrafficWeight,
+		Address:  "127.0.0.1",
+		Weight:   1,
+		Metadata: map[string]string{},
 	}
-	weight, err := rc.provider.Get(backend.TrafficWeightKey(rc.path, service, nodeAddr), false)
+	for _, opt := range opts {
+		opt(node)
+	}
+	weight, err := rc.provider.Get(backend.TrafficWeightKey(rc.path, service, node.Address), false)
 	if err != nil {
 		return err
 	} else if len(weight) > 0 {
 		node.Weight, _ = strconv.Atoi(weight[0].Value)
 	}
-	key := backend.ServiceDiscoveryKey(rc.path, service, nodeAddr)
-	return rc.provider.KeepAlive(key, node.String(), ttl)
+	key := backend.ServiceDiscoveryKey(rc.path, service, node.Address)
+	return rc.provider.KeepAlive(key, node.String(), node.TTL)
 }
 
-func (rc *RemoteConfig) GetNodes(service string) map[string]int {
+func (rc *RemoteConfig) GetNodes(service string) Nodes {
 	nodes, ok := rc.svc.Load(service)
 	if !ok {
-		return backend.ServiceNodes{}
+		return Nodes{}
 	}
-	return nodes.(backend.ServiceNodes)
+	return nodes.(Nodes)
 }
 
 func (rc *RemoteConfig) RegisterConfig(service string, v interface{}) error {
@@ -192,23 +194,23 @@ func (rc *RemoteConfig) setConfig(basePath string, pair *backend.KVPair, cfg ref
 }
 
 func (rc *RemoteConfig) getServices(basePath string) error {
-	services := make(map[string]backend.ServiceNodes)
+	services := make(map[string]Nodes)
 	kvs, err := rc.provider.Get(basePath, true)
 	if err != nil {
 		return err
 	}
 	for _, kv := range kvs {
-		var n backend.ServiceNode
+		var n Node
 		err := json.Unmarshal([]byte(kv.Value), &n)
 		if err != nil {
 			return err
 		}
 		svc, ok := services[n.Service]
 		if !ok {
-			svc = make(backend.ServiceNodes)
+			svc = make(Nodes)
 			services[n.Service] = svc
 		}
-		svc[n.NodeAddr] = n.Weight
+		svc[n.Address] = &n
 	}
 	for name, svc := range services {
 		rc.svc.Store(name, svc)
@@ -221,14 +223,14 @@ func (rc *RemoteConfig) updateService(basePath, service string) error {
 	if err != nil {
 		return err
 	}
-	svc := make(backend.ServiceNodes, len(kvs))
+	svc := make(Nodes, len(kvs))
 	for _, kv := range kvs {
-		var n backend.ServiceNode
+		var n Node
 		err := json.Unmarshal([]byte(kv.Value), &n)
 		if err != nil {
 			return err
 		}
-		svc[n.NodeAddr] = n.Weight
+		svc[n.Address] = &n
 	}
 	rc.svc.Store(service, svc)
 	return nil

@@ -219,7 +219,7 @@ func Test_BaseType_Callback(t *testing.T) {
 }
 
 func Test_RegisterNode(t *testing.T) {
-	err := grc.RegisterNode("Test_RegisterNode", "abcdef", time.Second)
+	err := grc.RegisterNode("Test_RegisterNode", WithNodeAddress("abcdef"), WithNodeTTL(time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}

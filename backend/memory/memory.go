@@ -38,7 +38,7 @@ type Memory struct {
 func NewProvider() backend.Provider {
 	p := &Memory{
 		kvs:   make(map[string]*node),
-		event: make(backend.EventChan, 500),
+		event: make(backend.EventChan, 10),
 	}
 	p.ctx, p.cancel = context.WithCancel(context.Background())
 	go p.checkTTL()
@@ -53,17 +53,17 @@ func (p *Memory) Type() string {
 
 // Set value with the specified key
 func (p *Memory) Set(key, value string, ttl time.Duration) error {
-	p.Lock()
-	defer p.Unlock()
 	expire := time.Now().Add(ttl)
 	if ttl == 0 {
 		expire = zeroTime
 	}
+	p.Lock()
 	p.kvs[key] = &node{
 		k:      key,
 		v:      value,
 		expire: expire,
 	}
+	p.Unlock()
 	p.event <- &backend.WatchEvent{
 		Type: backend.Put,
 		KVPair: backend.KVPair{
