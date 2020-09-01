@@ -219,14 +219,28 @@ func Test_BaseType_Callback(t *testing.T) {
 }
 
 func Test_RegisterNode(t *testing.T) {
-	err := grc.RegisterNode("Test_RegisterNode", WithNodeAddress("abcdef"), WithNodeTTL(time.Second))
+	id1, err := grc.RegisterNode("Test_RegisterNode", "node1", WithNodeTTL(time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}
+	if id1 == 0 {
+		t.Fatal(id1)
+	}
+	//
+	id2, err := grc.RegisterNode("Test_RegisterNode", "node2", WithOpsConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id2 == 0 || id1 == id2 {
+		t.Fatal(id1, id2)
+	}
 	time.Sleep(time.Second)
 	svc := grc.GetNodes("Test_RegisterNode")
-	if _, ok := svc["abcdef"]; !ok {
-		t.Fatal("no service node")
+	if _, ok := svc["node1"]; !ok {
+		t.Fatal("no service node1")
+	}
+	if _, ok := svc["node2"]; !ok {
+		t.Fatal("no service node2")
 	}
 }
 

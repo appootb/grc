@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"log"
 	"reflect"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -58,25 +57,36 @@ func New(opts ...Option) (*RemoteConfig, error) {
 	return rc, nil
 }
 
-func (rc *RemoteConfig) RegisterNode(service string, opts ...NodeOption) error {
+func (rc *RemoteConfig) RegisterNode(service, nodeAddr string, opts ...NodeOption) (int64, error) {
 	node := &Node{
 		TTL:      time.Second * 3,
 		Service:  service,
-		Address:  "127.0.0.1",
+		Address:  nodeAddr,
 		Weight:   1,
 		Metadata: map[string]string{},
 	}
 	for _, opt := range opts {
 		opt(node)
 	}
-	weight, err := rc.provider.Get(backend.TrafficWeightKey(rc.path, service, node.Address), false)
-	if err != nil {
-		return err
-	} else if len(weight) > 0 {
-		node.Weight, _ = strconv.Atoi(weight[0].Value)
+
+	if node.ops {
+		err := rc.loadUniqueID(node)
+		if err != nil {
+			return 0, err
+		}
+	} else {
+		uniqueID, err := rc.provider.Incr(backend.ServiceNodeIDIncrKey(rc.path, node.Service))
+		if err != nil {
+			return 0, err
+		}
+		node.UniqueID = uniqueID
 	}
+
 	key := backend.ServiceDiscoveryKey(rc.path, service, node.Address)
-	return rc.provider.KeepAlive(key, node.String(), node.TTL)
+	if err := rc.provider.KeepAlive(key, node.String(), node.TTL); err != nil {
+		return 0, err
+	}
+	return node.UniqueID, nil
 }
 
 func (rc *RemoteConfig) GetNodes(service string) Nodes {
@@ -191,6 +201,32 @@ func (rc *RemoteConfig) setConfig(basePath string, pair *backend.KVPair, cfg ref
 	}
 	log.Println("grc: config not updated:", pair.Key, pair.Value)
 	return nil
+}
+
+func (rc *RemoteConfig) loadUniqueID(node *Node) error {
+	ops := Node{}
+	opsKey := backend.ServiceOpsKey(rc.path, node.Service, node.Address)
+	v, err := rc.provider.Get(opsKey, false)
+	if err != nil {
+		return err
+	}
+	if len(v) > 0 {
+		err := json.Unmarshal([]byte(v[0].Value), &ops)
+		if err != nil {
+			return err
+		}
+		node.UniqueID = ops.UniqueID
+		node.Weight = ops.Weight
+		return nil
+	}
+
+	ops.Weight = node.Weight
+	ops.UniqueID, err = rc.provider.Incr(backend.ServiceNodeIDIncrKey(rc.path, node.Service))
+	if err != nil {
+		return err
+	}
+	node.UniqueID = ops.UniqueID
+	return rc.provider.Set(opsKey, ops.String(), 0)
 }
 
 func (rc *RemoteConfig) getServices(basePath string) error {

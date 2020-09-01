@@ -16,9 +16,9 @@ func WithNodeTTL(ttl time.Duration) NodeOption {
 	}
 }
 
-func WithNodeAddress(addr string) NodeOption {
+func WithOpsConfig() NodeOption {
 	return func(node *Node) {
-		node.Address = addr
+		node.ops = true
 	}
 }
 
@@ -35,11 +35,14 @@ func WithNodeMetadata(md map[string]string) NodeOption {
 }
 
 type Node struct {
-	TTL      time.Duration     `json:"ttl"`
-	Service  string            `json:"service"`
-	Address  string            `json:"address"`
-	Weight   int               `json:"weight"`
-	Metadata map[string]string `json:"metadata"`
+	ops bool
+
+	TTL      time.Duration     `json:"ttl,omitempty"`
+	UniqueID int64             `json:"unique_id,omitempty"`
+	Service  string            `json:"service,omitempty"`
+	Address  string            `json:"address,omitempty"`
+	Weight   int               `json:"weight,omitempty"`
+	Metadata map[string]string `json:"metadata,omitempty"`
 }
 
 func (n Node) String() string {

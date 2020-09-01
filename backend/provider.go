@@ -52,6 +52,9 @@ type Provider interface {
 	// Get value of the specified key or directory
 	Get(key string, dir bool) (KVPairs, error)
 
+	// Atomic increase the specified key
+	Incr(key string) (int64, error)
+
 	// Delete the specified key or directory
 	Delete(key string, dir bool) error
 

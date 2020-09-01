@@ -3,10 +3,12 @@ package etcd
 import (
 	"context"
 	"log"
+	"strconv"
 	"time"
 
 	"github.com/appootb/grc/backend"
 	"github.com/coreos/etcd/clientv3"
+	"github.com/coreos/etcd/clientv3/concurrency"
 	"github.com/coreos/etcd/mvcc/mvccpb"
 )
 
@@ -76,6 +78,36 @@ func (p *Etcd) Get(key string, dir bool) (backend.KVPairs, error) {
 		})
 	}
 	return kvs, nil
+}
+
+// Atomic increase the specified key
+func (p *Etcd) Incr(key string) (int64, error) {
+	session, err := concurrency.NewSession(p.Client)
+	if err != nil {
+		return 0, err
+	}
+	defer session.Close()
+
+	mutex := concurrency.NewMutex(session, key)
+	ctx, cancel := context.WithTimeout(p.ctx, backend.WriteTimeout)
+	defer cancel()
+	if err := mutex.Lock(ctx); err != nil {
+		return 0, err
+	}
+	defer mutex.Unlock(p.ctx)
+
+	num := int64(0)
+	kvs, err := p.Get(key, false)
+	if err != nil {
+		return 0, err
+	} else if len(kvs) > 0 {
+		num, _ = strconv.ParseInt(kvs[0].Value, 10, 64)
+	}
+	num++
+	if err := p.Set(key, strconv.FormatInt(num, 10), 0); err != nil {
+		return 0, err
+	}
+	return num, nil
 }
 
 // Delete the specified key or directory

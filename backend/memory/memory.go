@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -101,6 +102,25 @@ func (p *Memory) Get(key string, dir bool) (backend.KVPairs, error) {
 		}
 	}
 	return kvs, nil
+}
+
+// Atomic increase the specified key
+func (p *Memory) Incr(key string) (int64, error) {
+	p.Lock()
+	defer p.Unlock()
+	n, ok := p.kvs[key]
+	if !ok {
+		n = &node{
+			k:      key,
+			v:      "0",
+			expire: zeroTime,
+		}
+	}
+	v, _ := strconv.ParseInt(n.v, 10, 64)
+	v++
+	n.v = strconv.FormatInt(v, 10)
+	p.kvs[key] = n
+	return v, nil
 }
 
 // Delete the specified key or directory
