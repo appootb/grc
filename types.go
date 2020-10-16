@@ -263,12 +263,8 @@ func (t *embedArray) Len() int {
 	return len(t.load())
 }
 
-func (t *embedArray) HasSubArray() bool {
-	return t.r
-}
-
 func (t *embedArray) String() string {
-	if t.r {
+	if !t.r {
 		return strings.Join(t.load(), ";")
 	}
 	return strings.Join(t.load(), ",")
@@ -327,14 +323,14 @@ func (t *embedArray) Floats() []*embedFloat {
 }
 
 func (t *embedArray) ArrayAt(i int) *embedArray {
-	if !t.r {
+	if t.r {
 		panic(ExceedDeepLevel)
 	}
 	sv := t.load()
 	if i+1 > len(sv) {
 		panic("grc: index out of range")
 	}
-	return newEmbedArray(strings.Split(sv[i], ","), false)
+	return newEmbedArray(strings.Split(sv[i], ","), true)
 }
 
 type Array struct {
@@ -389,10 +385,15 @@ func (t *embedMap) String() string {
 			s = append(s, fmt.Sprintf("%s:%s", k, v))
 		}
 	}
-	if t.r {
+	if !t.r {
 		return strings.Join(s, ";")
 	}
 	return strings.Join(s, ",")
+}
+
+func (t *embedMap) Len() int {
+	mv := t.load()
+	return len(mv)
 }
 
 func (t *embedMap) Keys() *embedArray {
@@ -401,7 +402,7 @@ func (t *embedMap) Keys() *embedArray {
 	for k := range mv {
 		keys = append(keys, k)
 	}
-	return newEmbedArray(keys, false)
+	return newEmbedArray(keys, true)
 }
 
 func (t *embedMap) StringVal(key string) *embedString {
@@ -447,11 +448,11 @@ func (t *embedMap) FloatVal(key string) *embedFloat {
 }
 
 func (t *embedMap) ArrayVal(key string) *embedArray {
-	if !t.r {
+	if t.r {
 		panic(ExceedDeepLevel)
 	}
 	mv := t.load()
-	return newEmbedArray(strings.Split(mv[key], ","), false)
+	return newEmbedArray(strings.Split(mv[key], ","), true)
 }
 
 func (t *embedMap) parse(v, sep string) map[string]string {
@@ -469,12 +470,12 @@ func (t *embedMap) parse(v, sep string) map[string]string {
 }
 
 func (t *embedMap) MapVal(key string) *embedMap {
-	if !t.r {
+	if t.r {
 		panic(ExceedDeepLevel)
 	}
 	mv := t.load()
 	m := t.parse(mv[key], ",")
-	return newEmbedMap(m, false)
+	return newEmbedMap(m, true)
 }
 
 type Map struct {

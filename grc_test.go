@@ -301,3 +301,23 @@ func Test_CustomEmbedType(t *testing.T) {
 		t.Fatal("actual", cfg.EV)
 	}
 }
+
+func Test_EmbedMap(t *testing.T) {
+	type Config struct {
+		EMV Map   `default:"a_1:bb_2:1,cc_2:2;b_1:dd_2:19,ee_2:20"`
+		EAV Array `default:"a_1,b_1,c_1;a_2,b_2,c_2"`
+	}
+	cfg := &Config{}
+	err := grc.RegisterConfig("Test_EmbedMap", &cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	em := cfg.EMV.MapVal("a_1")
+	if em.Len() != 2 || em.IntVal("bb_2").Int() != 1 || em.IntVal("cc_2").Int() != 2 {
+		t.Fatal(em)
+	}
+	ea := cfg.EAV.ArrayAt(0)
+	if ea.Len() != 3 || ea.Strings()[0].String() != "a_1" || ea.Strings()[1].String() != "b_1" {
+		t.Fatal(ea)
+	}
+}
