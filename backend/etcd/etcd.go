@@ -89,7 +89,7 @@ func (p *Etcd) Incr(key string) (int64, error) {
 	defer session.Close()
 
 	mutex := concurrency.NewMutex(session, key)
-	ctx, cancel := context.WithTimeout(p.ctx, backend.WriteTimeout)
+	ctx, cancel := context.WithTimeout(p.ctx, backend.WriteTimeout*2)
 	defer cancel()
 	if err := mutex.Lock(ctx); err != nil {
 		return 0, err
@@ -209,7 +209,7 @@ func (p *Etcd) KeepAlive(key, value string, ttl time.Duration) error {
 			select {
 			case <-ch:
 				// do nothing
-			case <-ctx.Done():
+			case <-p.ctx.Done():
 				_, err = p.Client.Delete(context.TODO(), key)
 				if err != nil {
 					log.Println("grc: etcd KeepAlive stopping, ", err.Error())
