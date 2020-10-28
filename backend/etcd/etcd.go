@@ -191,7 +191,7 @@ func (p *Etcd) KeepAlive(key, value string, ttl time.Duration) error {
 	}
 
 	// put value with lease
-	ctx, cancel = context.WithTimeout(ctx, backend.WriteTimeout)
+	ctx, cancel = context.WithTimeout(p.ctx, backend.WriteTimeout)
 	_, err = p.Client.Put(ctx, key, value, clientv3.WithLease(lease.ID))
 	cancel()
 	if err != nil {
@@ -199,7 +199,7 @@ func (p *Etcd) KeepAlive(key, value string, ttl time.Duration) error {
 	}
 
 	// keep alive to etcd
-	ch, err := p.Client.KeepAlive(ctx, lease.ID)
+	ch, err := p.Client.KeepAlive(p.ctx, lease.ID)
 	if err != nil {
 		return err
 	}
