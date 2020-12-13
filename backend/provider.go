@@ -11,6 +11,7 @@ const (
 
 const (
 	DialTimeout  = time.Second * 3
+	RetryTimeout = time.Second * 3
 	ReadTimeout  = time.Second * 3
 	WriteTimeout = time.Second * 3
 )

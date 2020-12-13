@@ -182,24 +182,7 @@ func (p *Etcd) Watch(key string, dir bool) backend.EventChan {
 
 // Set and update ttl for the specified key
 func (p *Etcd) KeepAlive(key, value string, ttl time.Duration) error {
-	// grant lease
-	ctx, cancel := context.WithTimeout(p.ctx, backend.WriteTimeout)
-	lease, err := p.Grant(ctx, int64(ttl.Seconds()))
-	cancel()
-	if err != nil {
-		return err
-	}
-
-	// put value with lease
-	ctx, cancel = context.WithTimeout(p.ctx, backend.WriteTimeout)
-	_, err = p.Client.Put(ctx, key, value, clientv3.WithLease(lease.ID))
-	cancel()
-	if err != nil {
-		return err
-	}
-
-	// keep alive to etcd
-	ch, err := p.Client.KeepAlive(p.ctx, lease.ID)
+	ch, err := p.keepAlive(key, value, ttl, false)
 	if err != nil {
 		return err
 	}
@@ -207,8 +190,11 @@ func (p *Etcd) KeepAlive(key, value string, ttl time.Duration) error {
 	go func() {
 		for {
 			select {
-			case <-ch:
-				// do nothing
+			case m := <-ch:
+				// channel closed, retry
+				if m == nil {
+					ch, _ = p.keepAlive(key, value, ttl, true)
+				}
 			case <-p.ctx.Done():
 				_, err = p.Client.Delete(context.TODO(), key)
 				if err != nil {
@@ -224,4 +210,43 @@ func (p *Etcd) KeepAlive(key, value string, ttl time.Duration) error {
 // Close the provider connection
 func (p *Etcd) Close() error {
 	return p.Client.Close()
+}
+
+func (p *Etcd) keepAlive(key, value string, ttl time.Duration, withRetry bool) (<-chan *clientv3.LeaseKeepAliveResponse, error) {
+Retry:
+	// grant lease
+	ctx, cancel := context.WithTimeout(p.ctx, backend.WriteTimeout)
+	lease, err := p.Grant(ctx, int64(ttl.Seconds()))
+	cancel()
+	if err != nil {
+		if withRetry {
+			time.Sleep(backend.RetryTimeout)
+			goto Retry
+		}
+		return nil, err
+	}
+
+	// put value with lease
+	ctx, cancel = context.WithTimeout(p.ctx, backend.WriteTimeout)
+	_, err = p.Client.Put(ctx, key, value, clientv3.WithLease(lease.ID))
+	cancel()
+	if err != nil {
+		if withRetry {
+			time.Sleep(backend.RetryTimeout)
+			goto Retry
+		}
+		return nil, err
+	}
+
+	// keep alive to etcd
+	ch, err := p.Client.KeepAlive(p.ctx, lease.ID)
+	if err != nil {
+		if withRetry {
+			time.Sleep(backend.RetryTimeout)
+			goto Retry
+		}
+		return nil, err
+	}
+
+	return ch, nil
 }
