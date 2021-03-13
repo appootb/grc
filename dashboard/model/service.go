@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/appootb/grc/backend"
@@ -37,5 +38,6 @@ func (m Service) GetNames() []string {
 		names = append(names, name.(string))
 		return true
 	})
+	sort.Strings(names)
 	return names
 }

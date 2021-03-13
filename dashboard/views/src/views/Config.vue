@@ -191,7 +191,7 @@ export default {
           // TODO
           return
         }
-        this.initialize()
+        this.getConfig(this.service)
       }).catch(err => {
         console.log(err)
       })
