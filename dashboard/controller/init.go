@@ -18,6 +18,7 @@ func Init(router *gin.RouterGroup) error {
 	{
 		svc.GET("/", getServiceNames)
 		svc.PUT("/", updateServices)
+		svc.DELETE("/:service", deleteService)
 	}
 
 	return nil
