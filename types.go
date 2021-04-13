@@ -405,6 +405,12 @@ func (t *embedMap) Keys() *embedArray {
 	return newEmbedArray(keys, true)
 }
 
+func (t *embedMap) HasKey(key string) bool {
+	mv := t.load()
+	_, ok := mv[key]
+	return ok
+}
+
 func (t *embedMap) StringVal(key string) *embedString {
 	mv := t.load()
 	return newEmbedString(mv[key])

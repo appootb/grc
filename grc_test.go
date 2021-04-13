@@ -127,6 +127,9 @@ func Test_BaseType(t *testing.T) {
 	if cfg.MV.Keys().Len() != 2 || cfg.MV.IntVal("a").Int() != 1 || cfg.MV.IntVal("b").Int() != 2 {
 		t.Fatal("actual MV:", cfg.MV.String())
 	}
+	if !cfg.MV.HasKey("a") {
+		t.Fatal("actual MV:", cfg.MV.String())
+	}
 	s := cfg.AV.Ints()
 	if cfg.AV.Len() != 3 || s[0].Int() != 11 || s[1].Int() != 22 || s[2].Int() != 33 {
 		t.Fatal("actual AV:", cfg.AV.String())
