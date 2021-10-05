@@ -42,29 +42,29 @@ const (
 	DefaultChanLen = 100
 )
 
-// Backend provider interface
+// Provider interface.
 type Provider interface {
-	// Return provider type
+	// Type returns the provider type.
 	Type() string
 
-	// Set value with the specified key
+	// Set value for the specified key with a specified ttl.
 	Set(key, value string, ttl time.Duration) error
 
-	// Get value of the specified key or directory
+	// Get the value of the specified key or directory.
 	Get(key string, dir bool) (KVPairs, error)
 
-	// Atomic increase the specified key
+	// Incr invokes an atomic value increase for the specified key.
 	Incr(key string) (int64, error)
 
-	// Delete the specified key or directory
+	// Delete the specified key or directory.
 	Delete(key string, dir bool) error
 
-	// Watch for changes of the specified key or directory
+	// Watch for changes of the specified key or directory.
 	Watch(key string, dir bool) EventChan
 
-	// Set and update ttl for the specified key
+	// KeepAlive sets value and updates the ttl for the specified key.
 	KeepAlive(key, value string, ttl time.Duration) error
 
-	// Close the provider connection
+	// Close the provider connection.
 	Close() error
 }

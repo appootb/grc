@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/appootb/grc/backend"
-	"github.com/coreos/etcd/clientv3"
-	"github.com/coreos/etcd/clientv3/concurrency"
-	"github.com/coreos/etcd/mvcc/mvccpb"
+	"go.etcd.io/etcd/api/v3/mvccpb"
+	clientv3 "go.etcd.io/etcd/client/v3"
+	"go.etcd.io/etcd/client/v3/concurrency"
 )
 
 type Etcd struct {
@@ -33,12 +33,12 @@ func NewProvider(ctx context.Context, endPoints []string, username, password str
 	}, nil
 }
 
-// Return provider type
+// Type returns the provider type.
 func (p *Etcd) Type() string {
 	return backend.Etcd
 }
 
-// Set value with the specified key
+// Set value for the specified key with a specified ttl.
 func (p *Etcd) Set(key, value string, ttl time.Duration) error {
 	var options []clientv3.OpOption
 	if ttl > 0 {
@@ -57,7 +57,7 @@ func (p *Etcd) Set(key, value string, ttl time.Duration) error {
 	return err
 }
 
-// Get value of the specified key or directory
+// Get the value of the specified key or directory.
 func (p *Etcd) Get(key string, dir bool) (backend.KVPairs, error) {
 	var options []clientv3.OpOption
 	if dir {
@@ -80,7 +80,7 @@ func (p *Etcd) Get(key string, dir bool) (backend.KVPairs, error) {
 	return kvs, nil
 }
 
-// Atomic increase the specified key
+// Incr invokes an atomic value increase for the specified key.
 func (p *Etcd) Incr(key string) (int64, error) {
 	session, err := concurrency.NewSession(p.Client)
 	if err != nil {
@@ -91,7 +91,7 @@ func (p *Etcd) Incr(key string) (int64, error) {
 	mutex := concurrency.NewMutex(session, key)
 	ctx, cancel := context.WithTimeout(p.ctx, backend.WriteTimeout*2)
 	defer cancel()
-	if err := mutex.Lock(ctx); err != nil {
+	if err = mutex.Lock(ctx); err != nil {
 		return 0, err
 	}
 	defer mutex.Unlock(p.ctx)
@@ -104,13 +104,13 @@ func (p *Etcd) Incr(key string) (int64, error) {
 		num, _ = strconv.ParseInt(kvs[0].Value, 10, 64)
 	}
 	num++
-	if err := p.Set(key, strconv.FormatInt(num, 10), 0); err != nil {
+	if err = p.Set(key, strconv.FormatInt(num, 10), 0); err != nil {
 		return 0, err
 	}
 	return num, nil
 }
 
-// Delete the specified key or directory
+// Delete the specified key or directory.
 func (p *Etcd) Delete(key string, dir bool) error {
 	var options []clientv3.OpOption
 	if dir {
@@ -123,7 +123,7 @@ func (p *Etcd) Delete(key string, dir bool) error {
 	return err
 }
 
-// Watch for changes of the specified key or directory
+// Watch for changes of the specified key or directory.
 func (p *Etcd) Watch(key string, dir bool) backend.EventChan {
 	var options []clientv3.OpOption
 	if dir {
@@ -180,7 +180,7 @@ func (p *Etcd) Watch(key string, dir bool) backend.EventChan {
 	return eventsChan
 }
 
-// Set and update ttl for the specified key
+// KeepAlive sets value and updates the ttl for the specified key.
 func (p *Etcd) KeepAlive(key, value string, ttl time.Duration) error {
 	ch, err := p.keepAlive(key, value, ttl, false)
 	if err != nil {
@@ -207,7 +207,7 @@ func (p *Etcd) KeepAlive(key, value string, ttl time.Duration) error {
 	return nil
 }
 
-// Close the provider connection
+// Close the provider connection.
 func (p *Etcd) Close() error {
 	return p.Client.Close()
 }

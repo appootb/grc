@@ -173,14 +173,20 @@ func (rc *RemoteConfig) setSystemTypeValue(s string, v reflect.Value, recursion 
 		fv, _ := strconv.ParseFloat(s, 64)
 		v.SetFloat(fv)
 	case reflect.Slice, reflect.Array:
-		fields := strings.Split(s, sep)
+		var fields []string
+		if s != "" {
+			fields = strings.Split(s, sep)
+		}
 		sv := reflect.MakeSlice(v.Type(), len(fields), len(fields))
 		for i, field := range fields {
 			rc.setStaticValue(field, sv.Index(i), true)
 		}
 		v.Set(sv)
 	case reflect.Map:
-		vs := strings.Split(s, sep)
+		var vs []string
+		if s != "" {
+			vs = strings.Split(s, sep)
+		}
 		mv := reflect.MakeMapWithSize(v.Type(), len(vs))
 		for _, vv := range vs {
 			kv := strings.SplitN(vv, ":", 2)

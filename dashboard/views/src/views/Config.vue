@@ -147,7 +147,6 @@ export default {
     initialize() {
       axios.get('/api/service/').then(res => {
         if (res.data.code !== 0) {
-          // TODO
           return
         }
         res.data.data.forEach(item => {
@@ -160,7 +159,20 @@ export default {
           this.getConfig(this.services[0])
         }
       }).catch(err => {
-        // TODO
+        console.log(err)
+      })
+    },
+
+    refresh(service) {
+      axios.get('/api/config/' + service).then(res => {
+        if (res.data.code !== 0) {
+          console.log(res.data.code)
+          return
+        }
+        localStorage.service = service
+        this.service = service
+        this.desserts = res.data.data
+      }).catch(err => {
         console.log(err)
       })
     },
@@ -169,29 +181,16 @@ export default {
       if (service === this.service) {
         return
       }
-      axios.get('/api/config/' + service).then(res => {
-        if (res.data.code !== 0) {
-          // TODO
-          console.log(res.data.code)
-          return
-        }
-        localStorage.service = service
-        this.service = service
-        this.desserts = res.data.data
-      }).catch(err => {
-        // TODO
-        console.log(err)
-      })
+      this.refresh(service)
     },
 
     save() {
       let data = JSON.stringify(this.editedItem)
       axios.put('/api/config/' + this.service + '/' + this.editedItem.key, data).then(res => {
         if (res.data.code !== 0) {
-          // TODO
           return
         }
-        this.getConfig(this.service)
+        this.refresh(this.service)
       }).catch(err => {
         console.log(err)
       })
@@ -214,13 +213,10 @@ export default {
     deleteItemConfirm() {
       axios.delete('/api/config/' + this.service + '/' + this.editedItem.key).then(res => {
         if (res.data.code !== 0) {
-          // TODO
-          console.log(res.data.code)
           return
         }
         this.desserts.splice(this.editedIndex, 1)
       }).catch(err => {
-        // TODO
         console.log(err)
       })
 

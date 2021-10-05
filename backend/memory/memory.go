@@ -47,12 +47,12 @@ func NewProvider() backend.Provider {
 	return p
 }
 
-// Return provider type
+// Type returns the provider type.
 func (p *Memory) Type() string {
 	return backend.Memory
 }
 
-// Set value with the specified key
+// Set value for the specified key with a specified ttl.
 func (p *Memory) Set(key, value string, ttl time.Duration) error {
 	expire := time.Now().Add(ttl)
 	if ttl == 0 {
@@ -75,7 +75,7 @@ func (p *Memory) Set(key, value string, ttl time.Duration) error {
 	return nil
 }
 
-// Get value of the specified key or directory
+// Get the value of the specified key or directory.
 func (p *Memory) Get(key string, dir bool) (backend.KVPairs, error) {
 	p.RLock()
 	defer p.RUnlock()
@@ -104,7 +104,7 @@ func (p *Memory) Get(key string, dir bool) (backend.KVPairs, error) {
 	return kvs, nil
 }
 
-// Atomic increase the specified key
+// Incr invokes an atomic value increase for the specified key.
 func (p *Memory) Incr(key string) (int64, error) {
 	p.Lock()
 	defer p.Unlock()
@@ -123,7 +123,7 @@ func (p *Memory) Incr(key string) (int64, error) {
 	return v, nil
 }
 
-// Delete the specified key or directory
+// Delete the specified key or directory.
 func (p *Memory) Delete(key string, dir bool) error {
 	p.Lock()
 	defer p.Unlock()
@@ -140,7 +140,7 @@ func (p *Memory) Delete(key string, dir bool) error {
 	return nil
 }
 
-// Watch for changes of the specified key or directory
+// Watch for changes of the specified key or directory.
 func (p *Memory) Watch(key string, dir bool) backend.EventChan {
 	p.Lock()
 	defer p.Unlock()
@@ -153,12 +153,12 @@ func (p *Memory) Watch(key string, dir bool) backend.EventChan {
 	return ch
 }
 
-// Set and update ttl for the specified key
+// KeepAlive sets value and updates the ttl for the specified key.
 func (p *Memory) KeepAlive(key, value string, ttl time.Duration) error {
 	return p.Set(key, value, 0)
 }
 
-// Close the provider connection
+// Close the provider connection.
 func (p *Memory) Close() error {
 	p.cancel()
 	return nil

@@ -324,3 +324,31 @@ func Test_EmbedMap(t *testing.T) {
 		t.Fatal(ea)
 	}
 }
+
+func Test_EmptyArray(t *testing.T) {
+	type Config struct {
+		AV []int `default:""`
+	}
+	cfg := &Config{}
+	err := grc.RegisterConfig("Test_EmptyArray", &cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.AV) > 0 {
+		t.Fatal(cfg.AV)
+	}
+}
+
+func Test_EmptyMap(t *testing.T) {
+	type Config struct {
+		MV map[int]int `default:""`
+	}
+	cfg := &Config{}
+	err := grc.RegisterConfig("Test_EmptyMap", &cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.MV) > 0 {
+		t.Fatal(cfg.MV)
+	}
+}
