@@ -1,3 +1,14 @@
+.DS_Store
+
+# Editor directories and files
+.idea
+.vscode
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
 # Binaries for programs and plugins
 *.exe
 *.exe~
@@ -13,4 +24,3 @@
 
 # Dependency directories (remove the comment below to include it)
 vendor/
-dashboard/dashboard
