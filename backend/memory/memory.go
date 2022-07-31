@@ -141,7 +141,7 @@ func (p *Memory) Delete(key string, dir bool) error {
 }
 
 // Watch for changes of the specified key or directory.
-func (p *Memory) Watch(key string, dir bool) backend.EventChan {
+func (p *Memory) Watch(key string, dir bool) (backend.EventChan, error) {
 	p.Lock()
 	defer p.Unlock()
 	ch := make(backend.EventChan, 10)
@@ -150,7 +150,7 @@ func (p *Memory) Watch(key string, dir bool) backend.EventChan {
 		key:    key,
 		prefix: dir,
 	})
-	return ch
+	return ch, nil
 }
 
 // KeepAlive sets value and updates the ttl for the specified key.
