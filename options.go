@@ -8,7 +8,7 @@ import (
 	"github.com/appootb/grc/backend/memory"
 )
 
-// A option sets options such as provider, autoCreation, etc.
+// Option interface sets options such as provider, autoCreation, etc.
 type Option interface {
 	apply(*RemoteConfig)
 }

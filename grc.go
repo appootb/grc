@@ -48,9 +48,12 @@ func New(opts ...Option) (*RemoteConfig, error) {
 
 	basePath := backend.ServiceDiscoveryPrefixKey(rc.path)
 	// Watch for service nodes updated.
-	evtChan := rc.provider.Watch(basePath, true)
+	evtChan, err := rc.provider.Watch(basePath, true)
+	if err != nil {
+		return nil, err
+	}
 	// Get services.
-	if err := rc.getServices(basePath); err != nil {
+	if err = rc.getServices(basePath); err != nil {
 		return nil, err
 	}
 	go rc.watchServiceEvent(basePath, evtChan)
@@ -113,9 +116,12 @@ func (rc *RemoteConfig) RegisterConfig(service string, v interface{}) error {
 	}
 
 	// Watch for config updated.
-	evtChan := rc.provider.Watch(basePath, true)
+	evtChan, err := rc.provider.Watch(basePath, true)
+	if err != nil {
+		return err
+	}
 	// Initialize the config.
-	if err := rc.getConfig(basePath, configElem(cfg), false); err != nil {
+	if err = rc.getConfig(basePath, configElem(cfg), false); err != nil {
 		return err
 	}
 	go rc.watchConfigEvent(basePath, evtChan, configElem(cfg))
@@ -132,8 +138,7 @@ func (rc *RemoteConfig) remoteConfigMigration(basePath string, t reflect.Type) e
 		delete(reflectKVs, kv.Key)
 	}
 	for k, v := range reflectKVs {
-		err := rc.provider.Set(k, v, 0)
-		if err != nil {
+		if err = rc.provider.Set(k, v, 0); err != nil {
 			return err
 		}
 	}
@@ -146,8 +151,7 @@ func (rc *RemoteConfig) getConfig(basePath string, cfg reflect.Value, forUpdate 
 		return err
 	}
 	for _, pair := range kvs {
-		err := rc.setConfig(basePath, pair, cfg, forUpdate)
-		if err != nil {
+		if err = rc.setConfig(basePath, pair, cfg, forUpdate); err != nil {
 			return err
 		}
 	}
@@ -211,8 +215,7 @@ func (rc *RemoteConfig) loadUniqueID(node *Node) error {
 		return err
 	}
 	if len(v) > 0 {
-		err := json.Unmarshal([]byte(v[0].Value), &ops)
-		if err != nil {
+		if err = json.Unmarshal([]byte(v[0].Value), &ops); err != nil {
 			return err
 		}
 		node.UniqueID = ops.UniqueID
@@ -237,8 +240,7 @@ func (rc *RemoteConfig) getServices(basePath string) error {
 	}
 	for _, kv := range kvs {
 		var n Node
-		err := json.Unmarshal([]byte(kv.Value), &n)
-		if err != nil {
+		if err = json.Unmarshal([]byte(kv.Value), &n); err != nil {
 			return err
 		}
 		svc, ok := services[n.Service]
@@ -262,8 +264,7 @@ func (rc *RemoteConfig) updateService(basePath, service string) error {
 	svc := make(Nodes, len(kvs))
 	for _, kv := range kvs {
 		var n Node
-		err := json.Unmarshal([]byte(kv.Value), &n)
-		if err != nil {
+		if err = json.Unmarshal([]byte(kv.Value), &n); err != nil {
 			return err
 		}
 		svc[n.Address] = &n

@@ -8,16 +8,16 @@ import (
 	"sync/atomic"
 )
 
-// Dynamic type interface.
+// DynamicType interface.
 type DynamicType interface {
-	// Atomic update value.
+	// AtomicUpdate updates value.
 	AtomicUpdate(v string)
 
-	// Register value changed event.
+	// Changed will be invoked if value updated.
 	Changed(evt UpdateEvent)
 }
 
-// Static type interface.
+// StaticType interface.
 type StaticType interface {
 	// Set value.
 	Set(v string)
