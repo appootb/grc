@@ -10,10 +10,11 @@ const (
 )
 
 const (
-	DialTimeout  = time.Second * 3
-	RetryTimeout = time.Second * 3
-	ReadTimeout  = time.Second * 3
-	WriteTimeout = time.Second * 3
+	DialTimeout   = time.Second * 3
+	RetryTimeout  = time.Second * 3
+	ReadTimeout   = time.Second * 3
+	WriteTimeout  = time.Second * 3
+	KeepAliveTime = time.Second * 5
 )
 
 type EventType string
@@ -39,7 +40,7 @@ type WatchEvent struct {
 type EventChan chan *WatchEvent
 
 const (
-	DefaultChanLen = 100
+	DefaultChanLen = 1000
 )
 
 // Provider interface.
@@ -60,7 +61,7 @@ type Provider interface {
 	Delete(key string, dir bool) error
 
 	// Watch for changes of the specified key or directory.
-	Watch(key string, dir bool) EventChan
+	Watch(key string, dir bool) (EventChan, error)
 
 	// KeepAlive sets value and updates the ttl for the specified key.
 	KeepAlive(key, value string, ttl time.Duration) error

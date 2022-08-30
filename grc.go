@@ -48,7 +48,10 @@ func New(opts ...Option) (*RemoteConfig, error) {
 
 	basePath := backend.ServiceDiscoveryPrefixKey(rc.path)
 	// Watch for service nodes updated.
-	evtChan := rc.provider.Watch(basePath, true)
+	evtChan, err := rc.provider.Watch(basePath, true)
+	if err != nil {
+		return nil, err
+	}
 	// Get services.
 	if err := rc.getServices(basePath); err != nil {
 		return nil, err
@@ -113,9 +116,12 @@ func (rc *RemoteConfig) RegisterConfig(service string, v interface{}) error {
 	}
 
 	// Watch for config updated.
-	evtChan := rc.provider.Watch(basePath, true)
+	evtChan, err := rc.provider.Watch(basePath, true)
+	if err != nil {
+		return err
+	}
 	// Initialize the config.
-	if err := rc.getConfig(basePath, configElem(cfg), false); err != nil {
+	if err = rc.getConfig(basePath, configElem(cfg), false); err != nil {
 		return err
 	}
 	go rc.watchConfigEvent(basePath, evtChan, configElem(cfg))

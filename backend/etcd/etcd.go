@@ -19,10 +19,12 @@ type Etcd struct {
 
 func NewProvider(ctx context.Context, endPoints []string, username, password string) (backend.Provider, error) {
 	cli, err := clientv3.New(clientv3.Config{
-		Endpoints:   endPoints,
-		DialTimeout: backend.DialTimeout,
-		Username:    username,
-		Password:    password,
+		Endpoints:            endPoints,
+		DialTimeout:          backend.DialTimeout,
+		DialKeepAliveTime:    backend.KeepAliveTime,
+		DialKeepAliveTimeout: backend.DialTimeout,
+		Username:             username,
+		Password:             password,
 	})
 	if err != nil {
 		return nil, err
@@ -124,60 +126,105 @@ func (p *Etcd) Delete(key string, dir bool) error {
 }
 
 // Watch for changes of the specified key or directory.
-func (p *Etcd) Watch(key string, dir bool) backend.EventChan {
+func (p *Etcd) Watch(key string, dir bool) (backend.EventChan, error) {
+	revision, err := p.sync(key, dir, nil)
+	if err != nil {
+		return nil, err
+	}
+	//
+	eventsChan := make(backend.EventChan, backend.DefaultChanLen)
+	//
+	go p.watch(key, dir, revision, eventsChan)
+
+	return eventsChan, nil
+}
+
+func (p *Etcd) sync(key string, dir bool, eventsChan backend.EventChan) (int64, error) {
 	var options []clientv3.OpOption
 	if dir {
 		options = append(options, clientv3.WithPrefix())
 	}
 
-	ctx, cancel := context.WithCancel(clientv3.WithRequireLeader(p.ctx))
-	eventsChan := make(backend.EventChan, backend.DefaultChanLen)
-	etcdChan := p.Client.Watch(ctx, key, options...)
-
-	go func() {
-		for {
-			select {
-			case <-p.ctx.Done():
-				return
-
-			case resp := <-etcdChan:
-				if resp.Canceled {
-					// TODO
-					return
-				} else if resp.CompactRevision != 0 {
-					log.Println("grc: etcd required revision has been compacted")
-					// Watch again.
-					cancel()
-					ctx, cancel = context.WithCancel(clientv3.WithRequireLeader(p.ctx))
-					etcdChan = p.Client.Watch(ctx, key, options...)
-					eventsChan <- &backend.WatchEvent{
-						Type: backend.Reset,
-					}
-					continue
-				} else if err := resp.Err(); err != nil {
-					// TODO
-					log.Fatalln("grc: etcd watch error:", err.Error())
-				}
-
-				for _, evt := range resp.Events {
-					wEvent := &backend.WatchEvent{
-						KVPair: backend.KVPair{
-							Key:   string(evt.Kv.Key),
-							Value: string(evt.Kv.Value),
-						},
-					}
-					if evt.Type == mvccpb.PUT {
-						wEvent.Type = backend.Put
-					} else {
-						wEvent.Type = backend.Delete
-					}
-					eventsChan <- wEvent
-				}
+	ctx, cancel := context.WithTimeout(p.ctx, backend.ReadTimeout)
+	defer cancel()
+	//
+	resp, err := p.Client.Get(ctx, key, options...)
+	if err != nil {
+		return 0, err
+	}
+	//
+	if eventsChan != nil {
+		for _, kv := range resp.Kvs {
+			eventsChan <- &backend.WatchEvent{
+				Type: backend.Reset,
+				KVPair: backend.KVPair{
+					Key:   string(kv.Key),
+					Value: string(kv.Value),
+				},
 			}
 		}
-	}()
+	}
+	//
+	return resp.Header.Revision, nil
+}
 
-	return eventsChan
+func (p *Etcd) watch(key string, dir bool, revision int64, eventsChan backend.EventChan) {
+Retry:
+	options := []clientv3.OpOption{
+		clientv3.WithRev(revision),
+		clientv3.WithProgressNotify(),
+	}
+	if dir {
+		options = append(options, clientv3.WithPrefix())
+	}
+
+	ctx, cancel := context.WithCancel(p.ctx)
+	etcdChan := p.Client.Watch(ctx, key, options...)
+
+	for {
+		select {
+		case <-p.ctx.Done():
+			cancel()
+			return
+
+		case resp := <-etcdChan:
+			if resp.CompactRevision > 0 {
+				time.Sleep(time.Second)
+				log.Println("grc: etcd revision compacted")
+				revision, _ = p.sync(key, dir, eventsChan)
+				goto Retry
+			} else if err := resp.Err(); err != nil {
+				cancel()
+				time.Sleep(time.Second * 5)
+				log.Println("grc: etcd watch error, ", err.Error())
+				goto Retry
+			}
+			//
+			if resp.Header.Revision > 0 {
+				revision = resp.Header.Revision
+			}
+			if resp.IsProgressNotify() {
+				continue
+			}
+
+			for _, evt := range resp.Events {
+				wEvent := &backend.WatchEvent{
+					KVPair: backend.KVPair{
+						Key:   string(evt.Kv.Key),
+						Value: string(evt.Kv.Value),
+					},
+				}
+				if evt.Type == mvccpb.PUT {
+					wEvent.Type = backend.Put
+				} else {
+					wEvent.Type = backend.Delete
+				}
+				eventsChan <- wEvent
+			}
+			//
+			revision = resp.Header.GetRevision()
+		}
+	}
 }
 
 // KeepAlive sets value and updates the ttl for the specified key.
