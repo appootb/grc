@@ -3,7 +3,6 @@ package etcd
 import (
 	"context"
 	"log"
-	"math/rand"
 	"strconv"
 	"time"
 
@@ -128,6 +127,19 @@ func (p *Etcd) Delete(key string, dir bool) error {
 
 // Watch for changes of the specified key or directory.
 func (p *Etcd) Watch(key string, dir bool) (backend.EventChan, error) {
+	revision, err := p.sync(key, dir, nil)
+	if err != nil {
+		return nil, err
+	}
+	//
+	eventsChan := make(backend.EventChan, backend.DefaultChanLen)
+	//
+	go p.watch(key, dir, revision, eventsChan)
+
+	return eventsChan, nil
+}
+
+func (p *Etcd) sync(key string, dir bool, eventsChan backend.EventChan) (int64, error) {
 	var options []clientv3.OpOption
 	if dir {
 		options = append(options, clientv3.WithPrefix())
@@ -136,23 +148,31 @@ func (p *Etcd) Watch(key string, dir bool) (backend.EventChan, error) {
 	ctx, cancel := context.WithTimeout(p.ctx, backend.ReadTimeout)
 	defer cancel()
 	//
-	kvs, err := p.Client.Get(ctx, key, options...)
+	resp, err := p.Client.Get(ctx, key, options...)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
 	//
-	revision := kvs.Header.GetRevision()
-	eventsChan := make(backend.EventChan, backend.DefaultChanLen)
+	if eventsChan != nil {
+		for _, kv := range resp.Kvs {
+			eventsChan <- &backend.WatchEvent{
+				Type: backend.Reset,
+				KVPair: backend.KVPair{
+					Key:   string(kv.Key),
+					Value: string(kv.Value),
+				},
+			}
+		}
+	}
 	//
-	go p.watch(key, dir, revision, eventsChan)
-
-	return eventsChan, nil
+	return resp.Header.Revision, nil
 }
 
 func (p *Etcd) watch(key string, dir bool, revision int64, eventsChan backend.EventChan) {
 Retry:
 	options := []clientv3.OpOption{
 		clientv3.WithRev(revision),
+		clientv3.WithProgressNotify(),
 	}
 	if dir {
 		options = append(options, clientv3.WithPrefix())
@@ -168,16 +188,23 @@ Retry:
 			return
 
 		case resp := <-etcdChan:
-			if resp.CompactRevision != 0 {
-				revision = resp.CompactRevision
-				log.Println("grc: etcd required revision has been compacted")
-				// Watch again.
-				cancel()
+			if resp.CompactRevision > 0 {
+				time.Sleep(time.Second)
+				log.Println("grc: etcd revision compacted")
+				revision, _ = p.sync(key, dir, eventsChan)
 				goto Retry
 			} else if err := resp.Err(); err != nil {
-				// Exit
-				time.Sleep(time.Duration(rand.Int63n(60)) * time.Second)
-				log.Fatalln("grc: etcd watch error:", err.Error())
+				cancel()
+				time.Sleep(time.Second * 5)
+				log.Println("grc: etcd watch error, ", err.Error())
+				goto Retry
+			}
+			//
+			if resp.Header.Revision > 0 {
+				revision = resp.Header.Revision
+			}
+			if resp.IsProgressNotify() {
+				continue
 			}
 
 			for _, evt := range resp.Events {
